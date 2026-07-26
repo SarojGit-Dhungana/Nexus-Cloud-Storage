@@ -1,0 +1,46 @@
+from django.urls import path
+
+from .views import (
+    LoginView,
+    LogoutView,
+    InvitationAcceptView,
+    InvitationCreateView,
+    MeView,
+    OrganizationSettingsView,
+    OrganizationDataClearView,
+    PasswordChangeView,
+    TwoFactorConfirmView,
+    TwoFactorDisableView,
+    TwoFactorSetupView,
+    RegisterView,
+    SystemOverviewView,
+    SystemUserDetailView,
+    SystemUserListCreateView,
+    UserDetailView,
+    UserListView,
+    WorkspaceDetailView,
+    WorkspaceListCreateView,
+)
+
+urlpatterns = [
+    path("register/", RegisterView.as_view(), name="register"),
+    path("login/", LoginView.as_view(), name="login"),
+    path("logout/", LogoutView.as_view(), name="logout"),
+    path("me/", MeView.as_view(), name="me"),
+    path("password/", PasswordChangeView.as_view(), name="password_change"),
+    path("2fa/setup/", TwoFactorSetupView.as_view(), name="two_factor_setup"),
+    path("2fa/confirm/", TwoFactorConfirmView.as_view(), name="two_factor_confirm"),
+    path("2fa/disable/", TwoFactorDisableView.as_view(), name="two_factor_disable"),
+    path("organization/", OrganizationSettingsView.as_view(), name="organization_settings"),
+    path("organization/data/", OrganizationDataClearView.as_view(), name="organization_data_clear"),
+    path("invitations/", InvitationCreateView.as_view(), name="invitation_create"),
+    path("invitations/accept/", InvitationAcceptView.as_view(), name="invitation_accept"),
+    path("users/", UserListView.as_view(), name="user_list"),
+    path("users/<uuid:pk>/", UserDetailView.as_view(), name="user_detail"),
+    # System-level endpoints, super admin only.
+    path("system/overview/", SystemOverviewView.as_view(), name="system_overview"),
+    path("system/workspaces/", WorkspaceListCreateView.as_view(), name="system_workspaces"),
+    path("system/workspaces/<uuid:pk>/", WorkspaceDetailView.as_view(), name="system_workspace_detail"),
+    path("system/users/", SystemUserListCreateView.as_view(), name="system_users"),
+    path("system/users/<uuid:pk>/", SystemUserDetailView.as_view(), name="system_user_detail"),
+]

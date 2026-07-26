@@ -1,0 +1,14 @@
+Django==5.2.5
+djangorestframework==3.16.1
+djangorestframework-simplejwt==5.5.1
+django-cors-headers==4.7.0
+django-filter==25.1
+django-storages[s3]==1.14.6
+psycopg[binary]==3.3.2
+python-dotenv==1.1.1
+httpx==0.28.1
+Pillow==11.3.0
+gunicorn==23.0.0
+cryptography==45.0.6
+pyotp==2.9.0
+qrcode==8.0
