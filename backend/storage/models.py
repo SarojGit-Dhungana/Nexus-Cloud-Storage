@@ -75,6 +75,22 @@ class FileNode(models.Model):
         uploaded_file.seek(0)
         return digest.hexdigest()
 
+    @classmethod
+    def find_active_content_duplicate(cls, organization, checksum: str):
+        """Return an active file in the org with the same content hash, if any."""
+        if not checksum:
+            return None
+        return (
+            cls.objects.filter(
+                organization=organization,
+                node_type=cls.NodeType.FILE,
+                deleted_at__isnull=True,
+                checksum_sha256=checksum,
+            )
+            .only("id", "name")
+            .first()
+        )
+
 
 class ShareGrant(models.Model):
     class Permission(models.TextChoices):

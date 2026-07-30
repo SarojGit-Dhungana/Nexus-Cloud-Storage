@@ -4,13 +4,13 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import TruncDate, TruncMonth
-from django.core.files import File
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -18,7 +18,6 @@ from rest_framework.throttling import ScopedRateThrottle
 
 from accounts.models import Organization
 from accounts.permissions import IsActiveTenantUser, IsOrganizationAdmin
-from config.mailer import send_notification
 from .models import ActivityLog, FileNode, ShareGrant, ShareLink
 from .permissions import CanAccessNode
 from .serializers import (
@@ -31,10 +30,14 @@ from .serializers import (
     ShareGrantSerializer,
     ShareLinkCreateSerializer,
 )
-from .antivirus import scan_uploaded_file
+from .upload_malware_scanner import scan_upload_for_malware
 from .services import log_activity
 
 User = get_user_model()
+
+DUPLICATE_CONTENT_DETAIL = (
+    "The file content has matched with a stored file, so it can't be uploaded."
+)
 
 
 def accessible_nodes(user):
@@ -83,10 +86,29 @@ class FileNodeViewSet(viewsets.ModelViewSet):
         elif scope == "organization" and (user.role == "admin" or user.is_superuser):
             queryset = queryset.filter(deleted_at__isnull=True)
         else:
-            queryset = queryset.filter(owner=user, deleted_at__isnull=True)
+            # My Files: own items + files the user accepted from Shared
+            queryset = queryset.filter(
+                Q(owner=user, deleted_at__isnull=True)
+                | Q(
+                    share_grants__recipient=user,
+                    share_grants__status=ShareGrant.Status.ACCEPTED,
+                    deleted_at__isnull=True,
+                )
+            )
+
         parent = self.request.query_params.get("parent")
         if parent == "root":
-            queryset = queryset.filter(parent__isnull=True)
+            # My Files root: own root items + accepted shares (share icon in UI)
+            if scope == "mine" or scope not in ("shared", "trash", "organization"):
+                queryset = queryset.filter(
+                    Q(owner=user, parent__isnull=True)
+                    | Q(
+                        share_grants__recipient=user,
+                        share_grants__status=ShareGrant.Status.ACCEPTED,
+                    )
+                )
+            else:
+                queryset = queryset.filter(parent__isnull=True)
         elif parent:
             queryset = queryset.filter(parent_id=parent)
         category = self.request.query_params.get("type")
@@ -152,6 +174,34 @@ class FileNodeViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if request.user.organization_id:
+            checksum = FileNode.checksum(uploaded)
+            existing = FileNode.find_active_content_duplicate(request.user.organization, checksum)
+            if existing:
+                log_activity(
+                    request,
+                    "upload_rejected_duplicate",
+                    target_name=getattr(uploaded, "name", ""),
+                    metadata={
+                        "matched_file_id": str(existing.id),
+                        "matched_file_name": existing.name,
+                        "checksum_sha256": checksum,
+                        "phase": "pre_upload_scan",
+                    },
+                )
+                return Response(
+                    {
+                        "clean": True,
+                        "allowed": False,
+                        "threat": "",
+                        "engine": scan.engine,
+                        "detail": DUPLICATE_CONTENT_DETAIL,
+                        "scanned_bytes": scan.scanned_bytes,
+                        "duplicate": True,
+                        "matched_file": existing.name,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
         return Response(
             {
                 "clean": True,
@@ -169,7 +219,7 @@ class FileNodeViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         uploaded = serializer.validated_data["file"]
         # Defense in depth: serializer already scanned; re-scan before write.
-        scan = scan_uploaded_file(uploaded)
+        scan = scan_upload_for_malware(uploaded)
         if scan.rejected:
             log_activity(
                 request,
@@ -189,8 +239,30 @@ class FileNodeViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        checksum = FileNode.checksum(uploaded)
         with transaction.atomic():
             organization = Organization.objects.select_for_update().get(pk=request.user.organization_id)
+            existing = FileNode.find_active_content_duplicate(organization, checksum)
+            if existing:
+                log_activity(
+                    request,
+                    "upload_rejected_duplicate",
+                    target_name=uploaded.name,
+                    metadata={
+                        "matched_file_id": str(existing.id),
+                        "matched_file_name": existing.name,
+                        "checksum_sha256": checksum,
+                        "phase": "upload",
+                    },
+                )
+                return Response(
+                    {
+                        "detail": DUPLICATE_CONTENT_DETAIL,
+                        "duplicate": True,
+                        "matched_file": existing.name,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
             used = (
                 FileNode.objects.filter(
                     organization=organization, node_type="file", deleted_at__isnull=True
@@ -199,6 +271,18 @@ class FileNodeViewSet(viewsets.ModelViewSet):
             )
             if used + uploaded.size > organization.storage_quota_bytes:
                 return Response({"detail": "Organization storage quota exceeded."}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+            if request.user.storage_quota_bytes is not None:
+                personal_used = (
+                    FileNode.objects.filter(
+                        owner=request.user, node_type="file", deleted_at__isnull=True
+                    ).aggregate(total=Sum("size_bytes"))["total"]
+                    or 0
+                )
+                if personal_used + uploaded.size > request.user.storage_quota_bytes:
+                    return Response(
+                        {"detail": "Personal storage quota exceeded."},
+                        status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    )
             node = FileNode.objects.create(
                 organization=organization,
                 owner=request.user,
@@ -208,7 +292,7 @@ class FileNodeViewSet(viewsets.ModelViewSet):
                 content=uploaded,
                 size_bytes=uploaded.size,
                 mime_type=uploaded.content_type or "application/octet-stream",
-                checksum_sha256=FileNode.checksum(uploaded),
+                checksum_sha256=checksum,
             )
         log_activity(
             request,
@@ -293,139 +377,57 @@ class FileNodeViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=("post",))
     def duplicate(self, request, pk=None):
-        source = self.get_object()
-
-        def subtree_size(node):
-            return node.size_bytes + sum(subtree_size(child) for child in node.children.filter(deleted_at__isnull=True))
-
-        def copy_node(node, parent=None):
-            clone = FileNode(
-                organization=node.organization,
-                owner=request.user,
-                parent=parent if parent is not None else node.parent,
-                name=f"{node.name} copy" if parent is None else node.name,
-                node_type=node.node_type,
-                size_bytes=node.size_bytes,
-                mime_type=node.mime_type,
-                checksum_sha256=node.checksum_sha256,
-            )
-            if node.node_type == FileNode.NodeType.FILE and node.content:
-                node.content.open("rb")
-                clone.content.save(node.name, File(node.content), save=False)
-            clone.save()
-            for child in node.children.filter(deleted_at__isnull=True):
-                copy_node(child, clone)
-            return clone
-
-        with transaction.atomic():
-            organization = Organization.objects.select_for_update().get(pk=request.user.organization_id)
-            used = (
-                FileNode.objects.filter(organization=organization, node_type="file", deleted_at__isnull=True)
-                .aggregate(total=Sum("size_bytes"))["total"]
-                or 0
-            )
-            if used + subtree_size(source) > organization.storage_quota_bytes:
-                return Response({"detail": "Organization storage quota exceeded."}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
-            clone = copy_node(source)
-        log_activity(request, "duplicated", clone, metadata={"source_id": str(source.id)})
-        return Response(FileNodeSerializer(clone, context={"request": request}).data, status=status.HTTP_201_CREATED)
+        return Response(
+            {"detail": "Files can't be duplicated. Identical content is not allowed."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     @action(detail=True, methods=("get", "post"), url_path="shares")
     def shares(self, request, pk=None):
+        # HTTP layer only — ShareService owns the share rules
+        from .share_service import ShareService
+
         node = self.get_object()
         if request.method == "GET":
             return Response(ShareGrantSerializer(node.share_grants.select_related("recipient", "created_by", "node"), many=True).data)
         serializer = ShareGrantCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        email = serializer.validated_data["email"]
-        recipient = User.objects.filter(email=email, organization=request.user.organization).first()
-        if recipient == request.user:
-            return Response({"detail": "You already own this item."}, status=status.HTTP_400_BAD_REQUEST)
-        grant, created = ShareGrant.objects.update_or_create(
-            node=node,
-            recipient_email=email,
-            defaults={
-                "recipient": recipient,
-                "permission": serializer.validated_data["permission"],
-                "created_by": request.user,
-                "status": ShareGrant.Status.PENDING,
-                "responded_at": None,
-            },
-        )
-        log_activity(
-            request,
-            "shared",
-            node,
-            metadata={"recipient_email": email, "permission": grant.permission, "status": grant.status},
-        )
-        app_url = f"{settings.FRONTEND_URL}/user/?shared=inbox"
-        emailed = send_notification(
-            subject=f"{request.user.display_name} shared '{node.name}' with you",
-            body=(
-                f"{request.user.display_name} shared '{node.name}' with you on NexusStorage "
-                f"with {grant.permission} access.\n\n"
-                f"Sign in and open Shared → Pending requests to accept or ignore:\n{app_url}\n\n"
-                "After you accept, you can preview and download the file."
-            ),
-            to=email,
-            fail_silently=True,
-        )
+        try:
+            grant, created, emailed = ShareService(request).invite_by_email(
+                node,
+                serializer.validated_data["email"],
+                serializer.validated_data["permission"],
+            )
+        except ValidationError as error:
+            return Response(
+                error.detail if isinstance(error.detail, dict) else {"detail": error.detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         data = ShareGrantSerializer(grant).data
-        data["email_sent"] = bool(emailed)
+        data["email_sent"] = emailed
         data["created"] = created
         return Response(data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=("post",), url_path="share-link")
     def share_link(self, request, pk=None):
+        from .share_service import ShareService
+
         node = self.get_object()
-        if not request.user.organization.allow_public_links:
-            return Response({"detail": "Public links are disabled."}, status=status.HTTP_403_FORBIDDEN)
         serializer = ShareLinkCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        raw_token, token_hash = ShareLink.generate_token()
-        link = ShareLink(
-            node=node,
-            created_by=request.user,
-            token_hash=token_hash,
-            permission=serializer.validated_data["permission"],
-            expires_at=serializer.validated_data.get("expires_at"),
-        )
-        link.set_password(serializer.validated_data.get("password", ""))
-        link.save()
-        log_activity(request, "created_share_link", node)
-        public_url = request.build_absolute_uri(f"/api/public/shares/{raw_token}/")
-        emailed = False
-        notify_email = (request.data.get("email") or "").strip()
-        if notify_email:
-            emailed = bool(
-                send_notification(
-                    subject=f"{request.user.display_name} shared '{node.name}' with you",
-                    body=(
-                        f"{request.user.display_name} shared '{node.name}' with you via a secure "
-                        f"NexusStorage link ({link.permission} access).\n\n"
-                        f"Open the link:\n{public_url}\n\n"
-                        + (
-                            "This link is password protected; ask the sender for the password.\n"
-                            if link.password_hash
-                            else ""
-                        )
-                    ),
-                    to=notify_email,
-                    fail_silently=True,
-                )
+        try:
+            payload = ShareService(request).create_secure_link(
+                node,
+                permission=serializer.validated_data["permission"],
+                expires_at=serializer.validated_data.get("expires_at"),
+                password=serializer.validated_data.get("password", ""),
+                notify_email=(request.data.get("email") or "").strip(),
             )
-        return Response(
-            {
-                "id": link.id,
-                "token": raw_token,
-                "url": public_url,
-                "expires_at": link.expires_at,
-                "permission": link.permission,
-                "password_protected": bool(link.password_hash),
-                "email_sent": emailed,
-            },
-            status=status.HTTP_201_CREATED,
-        )
+        except ValidationError as error:
+            detail = error.detail if isinstance(error.detail, dict) else {"detail": error.detail}
+            code = status.HTTP_403_FORBIDDEN if "disabled" in str(detail).lower() else status.HTTP_400_BAD_REQUEST
+            return Response(detail, status=code)
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 class ShareGrantViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):

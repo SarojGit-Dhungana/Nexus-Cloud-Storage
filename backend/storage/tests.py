@@ -118,6 +118,10 @@ class StorageApiTests(APITestCase):
         self.assertEqual(accepted.status_code, status.HTTP_200_OK)
         shared = self.client.get("/api/files/?scope=shared")
         self.assertEqual(shared.data["count"], 1)
+        # Accepted shares also appear in My Files (with shared=true for the badge)
+        mine = self.client.get("/api/files/?scope=mine&parent=root")
+        self.assertEqual(mine.data["count"], 1)
+        self.assertTrue(mine.data["results"][0]["shared"])
         preview = self.client.get(f"/api/files/{node.id}/preview/")
         self.assertEqual(preview.status_code, status.HTTP_200_OK)
         download = self.client.get(f"/api/files/{node.id}/download/")
@@ -126,6 +130,7 @@ class StorageApiTests(APITestCase):
         revoked = self.client.post(f"/api/shares/{grant_id}/revoke/")
         self.assertEqual(revoked.status_code, status.HTTP_200_OK)
         self.assertEqual(self.client.get("/api/files/?scope=shared").data["count"], 0)
+        self.assertEqual(self.client.get("/api/files/?scope=mine&parent=root").data["count"], 0)
 
         self.authenticate()
         link_response = self.client.post(
@@ -191,16 +196,44 @@ class StorageApiTests(APITestCase):
                 "admin_name": "Nexus Admin",
                 "admin_email": "owner@nexusstorage.test",
                 "admin_password": "Strong-Test-Password!9",
+                "storage_quota_bytes": 50 * 1024**3,
             },
             format="json",
         )
         self.assertEqual(created.status_code, status.HTTP_201_CREATED)
         workspace_id = created.data["id"]
         self.assertEqual(created.data["admin_count"], 1)
+        self.assertEqual(created.data["storage_quota_bytes"], 50 * 1024**3)
+        self.assertEqual(len(mail.outbox), 1)
+        admin_mail = mail.outbox[0].body
+        self.assertIn("owner@nexusstorage.test", admin_mail)
+        self.assertIn("Strong-Test-Password!9", admin_mail)
+        self.assertIn("/admin", admin_mail)
+        mail.outbox.clear()
 
         listed = self.client.get("/api/auth/system/workspaces/")
         self.assertEqual(listed.data["count"], 2)
 
+        allocated = self.client.patch(
+            f"/api/auth/system/workspaces/{workspace_id}/",
+            {"storage_quota_bytes": 75 * 1024**3},
+            format="json",
+        )
+        self.assertEqual(allocated.status_code, status.HTTP_200_OK)
+        self.assertEqual(allocated.data["storage_quota_bytes"], 75 * 1024**3)
+
+        # Workspace admins cannot raise their own storage allocation.
+        new_admin = User.objects.get(email="owner@nexusstorage.test")
+        self.authenticate(new_admin)
+        org_patch = self.client.patch(
+            "/api/auth/organization/",
+            {"storage_quota_bytes": 200 * 1024**3},
+            format="json",
+        )
+        self.assertEqual(org_patch.status_code, status.HTTP_200_OK)
+        self.assertEqual(org_patch.data["storage_quota_bytes"], 75 * 1024**3)
+
+        self.authenticate(super_admin)
         suspended = self.client.patch(
             f"/api/auth/system/workspaces/{workspace_id}/", {"is_active": False}, format="json"
         )
@@ -208,7 +241,7 @@ class StorageApiTests(APITestCase):
         self.assertFalse(suspended.data["is_active"])
 
         # A member of a suspended workspace loses API access.
-        new_admin = User.objects.get(email="owner@nexusstorage.test")
+        new_admin = User.objects.select_related("organization").get(pk=new_admin.pk)
         self.authenticate(new_admin)
         self.assertEqual(self.client.get("/api/files/").status_code, status.HTTP_403_FORBIDDEN)
 
@@ -220,6 +253,8 @@ class StorageApiTests(APITestCase):
         self.assertEqual(demoted.status_code, status.HTTP_200_OK)
         self.assertEqual(demoted.data["role"], "user")
         self.assertFalse(demoted.data["is_active"])
+        self.assertIn("storage_used", demoted.data)
+        self.assertEqual(demoted.data["storage_quota_bytes"], 75 * 1024**3)
 
         overview = self.client.get("/api/auth/system/overview/")
         self.assertEqual(overview.data["workspaces"], 2)
@@ -291,6 +326,51 @@ class StorageApiTests(APITestCase):
         self.assertEqual(zip_scan.status_code, status.HTTP_200_OK)
         self.assertTrue(zip_scan.data["clean"])
 
+    def test_upload_rejects_duplicate_content_even_with_different_name(self):
+        self.authenticate()
+        first = SimpleUploadedFile("original.txt", b"same payload bytes", content_type="text/plain")
+        created = self.client.post("/api/files/upload/", {"file": first}, format="multipart")
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+
+        renamed = SimpleUploadedFile("renamed-copy.txt", b"same payload bytes", content_type="text/plain")
+        scan = self.client.post("/api/files/scan/", {"file": renamed}, format="multipart")
+        self.assertEqual(scan.status_code, status.HTTP_409_CONFLICT)
+        self.assertFalse(scan.data["allowed"])
+        self.assertTrue(scan.data["duplicate"])
+        self.assertIn("matched with a stored file", scan.data["detail"])
+
+        rejected = self.client.post(
+            "/api/files/upload/",
+            {"file": SimpleUploadedFile("renamed-copy.txt", b"same payload bytes", content_type="text/plain")},
+            format="multipart",
+        )
+        self.assertEqual(rejected.status_code, status.HTTP_409_CONFLICT)
+        self.assertIn("matched with a stored file", rejected.data["detail"])
+        self.assertEqual(
+            FileNode.objects.filter(organization=self.organization, deleted_at__isnull=True).count(),
+            1,
+        )
+
+        different = SimpleUploadedFile("other.txt", b"different payload", content_type="text/plain")
+        accepted = self.client.post("/api/files/upload/", {"file": different}, format="multipart")
+        self.assertEqual(accepted.status_code, status.HTTP_201_CREATED)
+
+    def test_duplicate_action_is_disabled(self):
+        self.authenticate()
+        node = FileNode.objects.create(
+            organization=self.organization,
+            owner=self.admin,
+            name="source.txt",
+            node_type="file",
+            content=SimpleUploadedFile("source.txt", b"payload"),
+            size_bytes=7,
+            mime_type="text/plain",
+            checksum_sha256="a" * 64,
+        )
+        response = self.client.post(f"/api/files/{node.id}/duplicate/")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("can't be duplicated", response.data["detail"].lower())
+
     def test_regular_user_cannot_access_admin_analytics(self):
         self.authenticate(self.member)
         self.assertEqual(self.client.get("/api/admin/analytics/").status_code, status.HTTP_403_FORBIDDEN)
@@ -304,6 +384,10 @@ class StorageApiTests(APITestCase):
         self.assertTrue(response.data["email_sent"])
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("invited@example.com", mail.outbox[0].to)
+        invite_body = mail.outbox[0].body
+        self.assertIn("invited@example.com", invite_body)
+        self.assertIn(response.data["invite_url"], invite_body)
+        self.assertNotIn("Temporary password", invite_body)
         token = response.data["invite_url"].split("invite=")[1]
 
         self.client.force_authenticate(user=None)
@@ -320,6 +404,70 @@ class StorageApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(reused.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_cannot_suspend_self_or_other_admins(self):
+        self.authenticate()
+        self_denied = self.client.patch(
+            f"/api/auth/users/{self.admin.id}/", {"is_active": False}, format="json"
+        )
+        self.assertEqual(self_denied.status_code, status.HTTP_400_BAD_REQUEST)
+
+        other_admin = User.objects.create_user(
+            email="coadmin@example.com",
+            password="Strong-Test-Password!9",
+            display_name="Co Admin",
+            organization=self.organization,
+            role="admin",
+        )
+        admin_denied = self.client.patch(
+            f"/api/auth/users/{other_admin.id}/", {"is_active": False}, format="json"
+        )
+        self.assertEqual(admin_denied.status_code, status.HTTP_400_BAD_REQUEST)
+
+        member_ok = self.client.patch(
+            f"/api/auth/users/{self.member.id}/", {"is_active": False}, format="json"
+        )
+        self.assertEqual(member_ok.status_code, status.HTTP_200_OK)
+        self.member.refresh_from_db()
+        self.assertFalse(self.member.is_active)
+
+    def test_admin_can_add_user_to_workspace(self):
+        self.authenticate()
+        response = self.client.post(
+            "/api/auth/users/",
+            {
+                "name": "New Member",
+                "email": "new-member@example.com",
+                "password": "Strong-New-Member!42",
+                "role": "user",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["email"], "new-member@example.com")
+        self.assertEqual(response.data["role"], "user")
+        self.assertEqual(response.data["organization"]["id"], str(self.organization.id))
+        created = User.objects.get(email="new-member@example.com")
+        self.assertEqual(created.organization_id, self.organization.id)
+        self.assertTrue(created.check_password("Strong-New-Member!42"))
+        self.assertEqual(len(mail.outbox), 1)
+        credentials = mail.outbox[0].body
+        self.assertIn("new-member@example.com", credentials)
+        self.assertIn("Strong-New-Member!42", credentials)
+        self.assertIn("/user", credentials)
+
+        self.authenticate(self.member)
+        denied = self.client.post(
+            "/api/auth/users/",
+            {
+                "name": "Blocked",
+                "email": "blocked@example.com",
+                "password": "Strong-New-Member!42",
+                "role": "user",
+            },
+            format="json",
+        )
+        self.assertEqual(denied.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_totp_secret_is_encrypted_and_code_required_at_login(self):
         self.authenticate()

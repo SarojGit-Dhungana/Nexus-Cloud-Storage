@@ -4,11 +4,12 @@ import { HardDrive, Loader2, X } from "lucide-react";
 export type FormField = {
   name: string;
   label: string;
-  type?: "text" | "password" | "email" | "number";
+  type?: "text" | "password" | "email" | "number" | "select";
   placeholder?: string;
   defaultValue?: string;
   required?: boolean;
   autoFocus?: boolean;
+  options?: { value: string; label: string }[];
 };
 
 type FormPromptOptions = {
@@ -178,15 +179,29 @@ function FormModal({
           {state.fields.map(field => (
             <div key={field.name}>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{field.label}</label>
-              <input
-                autoFocus={field.autoFocus}
-                type={field.type || "text"}
-                required={field.required !== false}
-                value={values[field.name] ?? ""}
-                placeholder={field.placeholder}
-                onChange={e => setValues(prev => ({ ...prev, [field.name]: e.target.value }))}
-                className="w-full text-sm px-3 py-2 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50"
-              />
+              {field.type === "select" ? (
+                <select
+                  autoFocus={field.autoFocus}
+                  required={field.required !== false}
+                  value={values[field.name] ?? ""}
+                  onChange={e => setValues(prev => ({ ...prev, [field.name]: e.target.value }))}
+                  className="w-full text-sm px-3 py-2 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50"
+                >
+                  {(field.options || []).map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  autoFocus={field.autoFocus}
+                  type={field.type || "text"}
+                  required={field.required !== false}
+                  value={values[field.name] ?? ""}
+                  placeholder={field.placeholder}
+                  onChange={e => setValues(prev => ({ ...prev, [field.name]: e.target.value }))}
+                  className="w-full text-sm px-3 py-2 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50"
+                />
+              )}
             </div>
           ))}
           {error && <p className="text-xs text-destructive">{error}</p>}

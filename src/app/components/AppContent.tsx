@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Shield } from "lucide-react";
-import { ApiError, ApiUser, authApi, clearTokens, Portal, portalForRole } from "../api";
+import { ApiUser, authApi, clearTokens, Portal, portalForRole } from "../api";
 import { isStorageFull, StorageFullNotice, wouldExceedStorage } from "../form-modals";
+import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useExternalFileDrop } from "../hooks/useExternalFileDrop";
 import { UploadGuardContext } from "../hooks/useUploadGuard";
-import { toUserProfile, uploadFilesWithVirusScan } from "../lib/files";
+import { toUserProfile, uploadFilesWithVirusScan, type UploadScanProgress } from "../lib/files";
 import { cn, formatBytes } from "../lib/format";
 import type { Theme, UserProfile, View } from "../types/app-types";
 import { AdminAnalytics } from "./AdminAnalytics";
@@ -14,6 +15,7 @@ import { AuthScreen } from "./AuthScreen";
 import { ChatPanel } from "./ChatPanel";
 import { DashboardView } from "./DashboardView";
 import { DropOverlay } from "./DropOverlay";
+import { FileScanDialog } from "./FileScanDialog";
 import { FilesView } from "./FilesView";
 import { Header } from "./Header";
 import { ProfileView } from "./ProfileView";
@@ -26,45 +28,37 @@ import { WorkspacesView } from "./WorkspacesView";
 import { BOOT_DURATION_MS, WorkspaceLoader } from "./WorkspaceLoader";
 
 export function AppContent({ portal }: { portal: Portal }) {
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  // TanStack: load current user instead of manual useEffect + fetch
+  const { data: apiUser, isLoading: authLoading, refetch } = useCurrentUser(portal);
   const [bootAnimationDone, setBootAnimationDone] = useState(false);
   const [view, setView] = useState<View>(portal === "system" ? "workspaces" : "dashboard");
   const [theme, setTheme] = useState<Theme>("light");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [userOverride, setUserOverride] = useState<UserProfile | null>(null);
+
+  const user = userOverride ?? (apiUser ? toUserProfile(apiUser) : null);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
 
   useEffect(() => {
-    authApi.me()
-      .then(apiUser => {
-        const expected = portalForRole(apiUser.role);
-        if (expected !== portal) {
-          // Wrong role for this portal — drop the session and stay on login.
-          clearTokens(portal);
-          return;
-        }
-        setUser(toUserProfile(apiUser));
-        if (apiUser.role === "superadmin") setView("workspaces");
-      })
-      .catch(() => clearTokens(portal))
-      .finally(() => setAuthLoading(false));
-  }, [portal]);
-
-  useEffect(() => {
     const timer = window.setTimeout(() => setBootAnimationDone(true), BOOT_DURATION_MS);
     return () => window.clearTimeout(timer);
   }, []);
 
-  const handleAuthenticated = (apiUser: ApiUser) => {
-    const expected = portalForRole(apiUser.role);
+  useEffect(() => {
+    if (apiUser?.role === "superadmin") setView("workspaces");
+  }, [apiUser?.role]);
+
+  const handleAuthenticated = (nextUser: ApiUser) => {
+    const expected = portalForRole(nextUser.role);
     if (expected !== portal) return;
-    setUser(toUserProfile(apiUser));
-    setView(apiUser.role === "superadmin" ? "workspaces" : "dashboard");
+    setUserOverride(toUserProfile(nextUser));
+    setView(nextUser.role === "superadmin" ? "workspaces" : "dashboard");
+    void refetch();
   };
 
   if (authLoading || !bootAnimationDone) return <WorkspaceLoader />;
@@ -74,7 +68,10 @@ export function AppContent({ portal }: { portal: Portal }) {
   return (
     <AuthenticatedShell
       user={user}
-      setUser={setUser}
+      setUser={(value) => {
+        setUserOverride(typeof value === "function" ? value(user) : value);
+        if (value === null) clearTokens(portal);
+      }}
       view={view}
       setView={setView}
       theme={theme}
@@ -108,6 +105,7 @@ export function AuthenticatedShell({
 }) {
   const queryClient = useQueryClient();
   const [storageFullOpen, setStorageFullOpen] = useState(false);
+  const [scanProgress, setScanProgress] = useState<UploadScanProgress | null>(null);
   const storageFull = isStorageFull(user.storage);
 
   const refreshUserStorage = useCallback(async () => {
@@ -130,18 +128,19 @@ export function AuthenticatedShell({
       return;
     }
     try {
-      await uploadFilesWithVirusScan(files, parent);
+      await uploadFilesWithVirusScan(files, parent, setScanProgress);
       queryClient.invalidateQueries({ queryKey: ["files"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["admin", "analytics"] });
       await refreshUserStorage();
     } catch (error) {
       if (error instanceof ApiError && (error.status === 413 || /quota|storage/i.test(error.message))) {
+        setScanProgress(null);
         setStorageFullOpen(true);
         await refreshUserStorage();
         return;
       }
-      // toast already shown by uploadFilesWithVirusScan for other errors
+      // Error details are shown in FileScanDialog
     }
   }, [user.role, user.storage, storageFull, queryClient, refreshUserStorage]);
 
@@ -177,7 +176,7 @@ export function AuthenticatedShell({
       case "shared": return <SharedView />;
       case "trash": return <TrashView />;
       case "admin": return <AdminAnalytics />;
-      case "users": return <UserManagement />;
+      case "users": return <UserManagement currentUserId={user.id} />;
       case "settings": return <SystemSettings />;
       case "workspaces": return <WorkspacesView />;
       case "administrators": return <AdministratorsView />;
@@ -199,6 +198,7 @@ export function AuthenticatedShell({
           totalLabel={formatBytes(user.storage.total)}
           onClose={() => setStorageFullOpen(false)}
         />
+        <FileScanDialog progress={scanProgress} onClose={() => setScanProgress(null)} />
 
         {mobileSidebar && (
           <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setMobileSidebar(false)} />

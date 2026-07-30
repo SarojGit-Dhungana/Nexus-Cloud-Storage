@@ -1,23 +1,27 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Database, Globe, Shield, SlidersHorizontal } from "lucide-react";
+import { UserPlus, Users } from "lucide-react";
 import { adminApi, dashboardApi, OrganizationSettings } from "../api";
 import { StorageMeter, useFormPrompt } from "../form-modals";
 import { cn } from "../lib/format";
+
+const ROLE_OPTIONS = [
+  { value: "user", label: "Member" },
+  { value: "admin", label: "Administrator" },
+];
 
 export function SystemSettings() {
   const queryClient = useQueryClient();
   const { data: settings } = useQuery({ queryKey: ["admin", "settings"], queryFn: adminApi.settings });
   const { data: analytics } = useQuery({ queryKey: ["admin", "analytics"], queryFn: dashboardApi.admin });
+  const { data: users = [] } = useQuery({ queryKey: ["admin", "users"], queryFn: adminApi.users });
   const { promptForm, modal: formModal } = useFormPrompt();
   const [organizationName, setOrganizationName] = useState("");
-  const [storageLimit, setStorageLimit] = useState(100);
   const [maxFileSize, setMaxFileSize] = useState(500);
   useEffect(() => {
     if (!settings) return;
     setOrganizationName(settings.name);
-    setStorageLimit(settings.storage_quota_bytes / 1024 ** 3);
     setMaxFileSize(settings.max_file_size_bytes / 1024 ** 2);
   }, [settings]);
   const toggles = {
@@ -54,13 +58,62 @@ export function SystemSettings() {
     try {
       await adminApi.updateSettings({
         name: organizationName,
-        storage_quota_bytes: Math.round(storageLimit * 1024 ** 3),
         max_file_size_bytes: Math.round(maxFileSize * 1024 ** 2),
       });
       queryClient.invalidateQueries({ queryKey: ["admin", "settings"] });
       toast.success("Settings saved");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Settings update failed");
+    }
+  };
+  const addUser = async () => {
+    const values = await promptForm({
+      title: "Add workspace user",
+      description: "Create an account in your workspace. Share the temporary password securely.",
+      fields: [
+        { name: "name", label: "Full name", autoFocus: true, placeholder: "Jane Doe" },
+        { name: "email", label: "Email address", type: "email", placeholder: "jane@company.com" },
+        { name: "password", label: "Temporary password", type: "password", placeholder: "At least 8 characters" },
+        { name: "role", label: "Role", type: "select", options: ROLE_OPTIONS, defaultValue: "user" },
+      ],
+      confirmLabel: "Add user",
+    });
+    if (!values?.name?.trim() || !values?.email?.trim() || !values?.password) return;
+    try {
+      const created = await adminApi.createUser({
+        name: values.name.trim(),
+        email: values.email.trim(),
+        password: values.password,
+        role: values.role === "admin" ? "admin" : "user",
+      });
+      queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+      toast.success(`${created.name} added to your workspace`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not add user");
+    }
+  };
+  const inviteUser = async () => {
+    const values = await promptForm({
+      title: "Invite user",
+      description: "Send an invitation link (valid for 7 days). The link is copied to your clipboard.",
+      fields: [
+        { name: "email", label: "Email address", type: "email", autoFocus: true, placeholder: "you@nexusstorage.local" },
+        { name: "role", label: "Role", type: "select", options: ROLE_OPTIONS, defaultValue: "user" },
+      ],
+      confirmLabel: "Create invite",
+    });
+    const email = values?.email?.trim();
+    if (!email) return;
+    try {
+      const invitation = await adminApi.invite(email, values.role === "admin" ? "admin" : "user");
+      await navigator.clipboard.writeText(invitation.invite_url);
+      toast.success(
+        invitation.email_sent
+          ? `Invitation emailed to ${email} (link also copied)`
+          : "Invitation link copied (valid for 7 days)",
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Invitation failed");
     }
   };
   const clearOrganizationData = async () => {
@@ -113,6 +166,34 @@ export function SystemSettings() {
       </div>
 
       <div className="bg-card rounded-xl border border-border p-5">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-sm font-semibold mb-1">Workspace members</h3>
+            <p className="text-xs text-muted-foreground">
+              Add people to your workspace or send an invite link. {users.length} member{users.length === 1 ? "" : "s"} currently.
+            </p>
+          </div>
+          <Users className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={addUser}
+            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+          >
+            <UserPlus className="w-3.5 h-3.5" /> Add user
+          </button>
+          <button
+            type="button"
+            onClick={inviteUser}
+            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-border hover:bg-secondary transition-colors"
+          >
+            <UserPlus className="w-3.5 h-3.5" /> Invite by email
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-card rounded-xl border border-border p-5">
         <h3 className="text-sm font-semibold mb-1">General</h3>
         <p className="text-xs text-muted-foreground mb-4">Basic system configuration</p>
         <div className="space-y-4">
@@ -126,13 +207,18 @@ export function SystemSettings() {
             <p className="text-[11px] text-muted-foreground mt-1">Users need this slug to create a regular account in your workspace.</p>
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1.5">Organization storage limit (GB)</label>
-            <input type="number" value={storageLimit} onChange={e => setStorageLimit(Number(e.target.value))} className="w-full text-sm px-3 py-2 rounded-lg bg-secondary border border-border" />
+            <label className="text-xs font-medium text-muted-foreground block mb-1.5">Organization storage limit</label>
+            <input
+              readOnly
+              value={settings ? `${(settings.storage_quota_bytes / 1024 ** 3).toFixed(1)} GB` : "—"}
+              className="w-full text-sm px-3 py-2 rounded-lg bg-secondary border border-border"
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">Allocated by the system super admin. Contact them to request more storage.</p>
             {settings && (
               <div className="mt-3">
                 <StorageMeter
                   usedGb={(analytics?.total_storage ?? 0) / 1024 ** 3}
-                  totalGb={storageLimit || settings.storage_quota_bytes / 1024 ** 3}
+                  totalGb={settings.storage_quota_bytes / 1024 ** 3}
                   compact
                 />
               </div>

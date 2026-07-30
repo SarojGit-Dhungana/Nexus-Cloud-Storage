@@ -108,7 +108,6 @@ export function AdminAnalytics() {
                     {log.action_label || String(log.action).replaceAll("_", " ")}
                   </span>
                 </div>
-                <p className="text-xs text-muted-foreground truncate mt-0.5">{log.file_name || "—"}</p>
               </div>
               <p className="text-[10px] text-muted-foreground whitespace-nowrap">{new Date(log.timestamp).toLocaleString()}</p>
             </div>

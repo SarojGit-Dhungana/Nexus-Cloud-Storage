@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Activity, ArrowUpRight, Check, ChevronRight, Copy, Download, Eye, FileText, Folder, FolderOpen,
-  Grid3X3, History, Home, Link, List, Lock, MoreHorizontal, Move, Plus, Search, Share2, Star,
+  Activity, ArrowUpRight, Check, ChevronRight, Download, Eye, FileText, Folder, FolderOpen,
+  Grid3X3, History, Home, List, Lock, MoreHorizontal, Move, Plus, Search, Share2, Star,
   Trash, Upload, X,
 } from "lucide-react";
 import { authenticatedDownload, authenticatedPreview, fileApi } from "../api";
@@ -184,10 +184,6 @@ export function FilesView() {
         refresh();
       } else if (label === "Share…") {
         setShareTarget(file);
-      } else if (label === "Copy link") {
-        const link = await fileApi.createShareLink(file.id, { permission: "view" });
-        await navigator.clipboard.writeText(link.url);
-        toast.success("Secure link copied");
       } else if (label === "Rename") {
         const values = await promptForm({
           title: "Rename",
@@ -201,10 +197,6 @@ export function FilesView() {
           refresh();
           toast.success("Renamed");
         }
-      } else if (label === "Duplicate") {
-        await fileApi.duplicate(file.id);
-        refresh();
-        toast.success("Duplicated");
       } else if (label === "Move up") {
         const parentId = folderStack.length > 1 ? folderStack[folderStack.length - 2].id : null;
         await moveFileToFolder(file.id, parentId);
@@ -445,9 +437,12 @@ export function FilesView() {
               </div>
               <p className="text-xs font-medium truncate mb-1">{file.name}</p>
               <p className="text-[10px] text-muted-foreground">{file.type === "folder" ? "Folder · double-click to open" : file.modified}</p>
-              <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+              <div className={cn(
+                "absolute top-2 left-2 flex gap-1 transition-opacity",
+                file.shared ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              )}>
                 {file.starred && <Star className="w-3 h-3 text-amber-400 fill-amber-400" />}
-                {file.shared && <Share2 className="w-3 h-3 text-primary" />}
+                {file.shared && <Share2 className="w-3.5 h-3.5 text-primary" />}
               </div>
               {dropTargetFolder === file.id && (
                 <p className="absolute inset-x-2 bottom-2 rounded-md bg-primary/90 px-2 py-1 text-[10px] font-medium text-primary-foreground">
@@ -530,10 +525,8 @@ export function FilesView() {
             ...(contextMenu.file.type === "folder" ? [{ icon: FolderOpen, label: "Open" }] : [{ icon: Eye, label: "Preview" }]),
             { icon: Download, label: "Download" },
             { icon: Share2, label: "Share…" },
-            { icon: Link, label: "Copy link" },
             { icon: FileText, label: "Rename" },
             { icon: Star, label: contextMenu.file.starred ? "Unstar" : "Star" },
-            { icon: Copy, label: "Duplicate" },
             { icon: Move, label: "Move to…" },
             ...(folderStack.length ? [{ icon: ArrowUpRight, label: "Move up" }] : []),
           ].map(({ icon: Icon, label }) => (

@@ -1,13 +1,10 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, Copy, Globe, Link, Loader2, Mail, Search, Share2, X } from "lucide-react";
+import { Copy, Globe, Link, Loader2, Mail, X } from "lucide-react";
 import { fileApi } from "../api";
-import { cn } from "../lib/format";
 
 export function ShareDialog({ file, onClose }: { file: { id: string; name: string }; onClose: () => void }) {
   const [shareEmail, setShareEmail] = useState("");
-  const [permission, setPermission] = useState<"view" | "edit" | "share">("view");
   const [expiration, setExpiration] = useState("");
   const [sharePassword, setSharePassword] = useState("");
   const [linkEmail, setLinkEmail] = useState("");
@@ -18,10 +15,10 @@ export function ShareDialog({ file, onClose }: { file: { id: string; name: strin
     if (!shareEmail.trim()) return toast.error("Enter an email address");
     setBusy("invite");
     try {
-      const result = await fileApi.invite(file.id, shareEmail.trim(), permission);
+      const result = await fileApi.invite(file.id, shareEmail.trim(), "share");
       toast.success(
         result.email_sent
-          ? `Share request sent to ${shareEmail} — they must accept it`
+          ? `Share request emailed to ${shareEmail}`
           : `Share request created for ${shareEmail} — waiting for acceptance`,
       );
       setShareEmail("");
@@ -36,7 +33,7 @@ export function ShareDialog({ file, onClose }: { file: { id: string; name: strin
     setBusy("link");
     try {
       const link = await fileApi.createShareLink(file.id, {
-        permission,
+        permission: "share",
         expires_at: expiration ? new Date(expiration).toISOString() : null,
         password: sharePassword,
         email: linkEmail.trim() || undefined,
@@ -75,11 +72,7 @@ export function ShareDialog({ file, onClose }: { file: { id: string; name: strin
             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Share with a person (by email)</label>
             <div className="flex gap-2">
               <input value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="you@nexusstorage.local" className="flex-1 text-sm px-3 py-2 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50" />
-              <select value={permission} onChange={e => setPermission(e.target.value as typeof permission)} className="text-xs px-2 py-2 rounded-lg bg-secondary border border-border focus:outline-none">
-                <option value="view">Can view</option>
-                <option value="edit">Can edit</option>
-                <option value="share">Can share</option>
-              </select>
+              <span className="text-xs px-2 py-2 rounded-lg bg-secondary border border-border text-muted-foreground whitespace-nowrap">Can share</span>
               <button onClick={invitePerson} disabled={busy === "invite"} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-60 flex items-center gap-1">
                 {busy === "invite" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />} Send
               </button>

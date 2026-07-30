@@ -1,53 +1,46 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { RefreshCw, Trash, Trash2 } from "lucide-react";
-import { fileApi } from "../api";
+/**
+ * Trash page — TanStack mutations + TrashItemRow component.
+ */
+import { Trash2 } from "lucide-react";
 import { useConfirm } from "../form-modals";
-import { getFileIcon, toUiFile } from "../lib/files";
-import { cn } from "../lib/format";
-import type { FileItem } from "../types/app-types";
+import {
+  useEmptyTrashMutation,
+  usePermanentDeleteMutation,
+  useRestoreTrashMutation,
+  useTrashQuery,
+} from "../hooks/useTrash";
+import { toUiFile } from "../lib/files";
+import { TrashItemRow } from "./trash/TrashItemRow";
 
 export function TrashView() {
-  const queryClient = useQueryClient();
   const { confirm, modal: confirmModal } = useConfirm();
-  const { data: apiTrash = [] } = useQuery({ queryKey: ["files", "trash"], queryFn: () => fileApi.list("trash") });
-  const trash = apiTrash.map(file => ({ ...toUiFile(file), deleted: file.deleted_at ? new Date(file.deleted_at).toLocaleString() : "" }));
-  const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["files"] });
-    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-  };
+  const { data: apiTrash = [] } = useTrashQuery();
+  const restoreMutation = useRestoreTrashMutation();
+  const deleteMutation = usePermanentDeleteMutation();
+  const emptyMutation = useEmptyTrashMutation();
 
-  const restore = async (file: FileItem & { deleted: string }) => {
+  const trash = apiTrash.map(file => ({
+    ...toUiFile(file),
+    deleted: file.deleted_at ? new Date(file.deleted_at).toLocaleString() : "",
+  }));
+
+  const restore = async (file: (typeof trash)[number]) => {
     const ok = await confirm({
       title: "Restore item?",
-      description: `“${file.name}” will be restored to My Files.`,
+      description: `"${file.name}" will be restored to My Files.`,
       confirmLabel: "Restore",
     });
-    if (!ok) return;
-    try {
-      await fileApi.restore(file.id);
-      refresh();
-      toast.success(`“${file.name}” restored`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Restore failed");
-    }
+    if (ok) restoreMutation.mutate(file.id);
   };
 
-  const permanentlyDelete = async (file: FileItem & { deleted: string }) => {
+  const permanentlyDelete = async (file: (typeof trash)[number]) => {
     const ok = await confirm({
       title: "Delete permanently?",
-      description: `“${file.name}” will be permanently deleted. This cannot be undone.`,
+      description: `"${file.name}" will be permanently deleted. This cannot be undone.`,
       confirmLabel: "Delete forever",
       danger: true,
     });
-    if (!ok) return;
-    try {
-      await fileApi.permanentDelete(file.id);
-      refresh();
-      toast.success("Permanently deleted");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Delete failed");
-    }
+    if (ok) deleteMutation.mutate(file.id);
   };
 
   const emptyTrash = async () => {
@@ -58,14 +51,7 @@ export function TrashView() {
       confirmLabel: "Empty trash",
       danger: true,
     });
-    if (!ok) return;
-    try {
-      await fileApi.emptyTrash();
-      refresh();
-      toast.success("Trash emptied");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to empty trash");
-    }
+    if (ok) emptyMutation.mutate();
   };
 
   return (
@@ -93,29 +79,13 @@ export function TrashView() {
       ) : (
         <div className="bg-card rounded-xl border border-border overflow-hidden">
           {trash.map((f, i) => (
-            <div key={f.id} className={cn("flex items-center gap-4 px-4 py-3 hover:bg-secondary/50 transition-colors", i !== trash.length - 1 && "border-b border-border")}>
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: f.color + "18" }}>
-                {getFileIcon(f.type, f.color)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{f.name}</p>
-                <p className="text-xs text-muted-foreground">Deleted {f.deleted} · {f.size !== "—" ? f.size : f.type}</p>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  onClick={() => restore(f)}
-                  className="text-xs px-2.5 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-1"
-                >
-                  <RefreshCw className="w-3 h-3" /> Restore
-                </button>
-                <button
-                  onClick={() => permanentlyDelete(f)}
-                  className="text-xs px-2.5 py-1.5 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors"
-                >
-                  Delete forever
-                </button>
-              </div>
-            </div>
+            <TrashItemRow
+              key={f.id}
+              file={f}
+              isLast={i === trash.length - 1}
+              onRestore={() => restore(f)}
+              onDeleteForever={() => permanentlyDelete(f)}
+            />
           ))}
         </div>
       )}

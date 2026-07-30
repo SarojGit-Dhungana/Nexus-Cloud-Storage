@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Crown, Plus, RefreshCw, UserPlus } from "lucide-react";
+import { HardDrive, UserPlus } from "lucide-react";
 import { superAdminApi, SystemUser } from "../api";
-import { useConfirm, useFormPrompt } from "../form-modals";
+import { StorageMeter, useConfirm, useFormPrompt } from "../form-modals";
 import { AVATAR_COLORS } from "../lib/brand";
-import { cn } from "../lib/format";
+import { cn, formatByteCount } from "../lib/format";
 import { AppAvatar } from "./AppAvatar";
 import { AppBadge } from "./AppBadge";
 
@@ -18,9 +18,14 @@ export function AdministratorsView() {
   const { confirm, modal: confirmModal } = useConfirm();
   const { data: workspaces = [] } = useQuery({ queryKey: ["system", "workspaces"], queryFn: superAdminApi.workspaces });
   const { data: accounts = [], isLoading } = useQuery({
-    queryKey: ["system", "users"],
-    queryFn: () => superAdminApi.users(),
+    queryKey: ["system", "users", "admin"],
+    queryFn: () => superAdminApi.users({ role: "admin" }),
   });
+
+  const workspaceById = useMemo(
+    () => Object.fromEntries(workspaces.map(workspace => [workspace.id, workspace])),
+    [workspaces],
+  );
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["system"] });
   const filtered = accounts.filter(account =>
@@ -46,22 +51,61 @@ export function AdministratorsView() {
     }
   };
 
-  const changeRole = async (account: SystemUser) => {
-    const demoting = account.role === "admin";
+  const allocateWorkspaceStorage = async (account: SystemUser) => {
+    if (!account.organization_id) {
+      toast.error("This account has no workspace");
+      return;
+    }
+    const used = account.storage_used || 0;
+    const quota = account.storage_quota_bytes || 0;
+    const usedGb = used / 1024 ** 3;
+    const currentGb = quota / 1024 ** 3;
+    const values = await promptForm({
+      title: `Allocate storage — ${account.organization_name}`,
+      description: `Total workspace storage for this admin. Currently using ${formatByteCount(used)}. Must be at least ${usedGb.toFixed(2)} GB. Members’ personal quotas are set by the workspace admin.`,
+      fields: [{
+        name: "storage_gb",
+        label: "Total storage allocation (GB)",
+        type: "number",
+        defaultValue: String(Math.max(1, Math.round(currentGb * 10) / 10) || 100),
+        autoFocus: true,
+      }],
+      confirmLabel: "Save allocation",
+    });
+    if (!values?.storage_gb) return;
+    const storageGb = Number(values.storage_gb);
+    if (!Number.isFinite(storageGb) || storageGb <= 0) {
+      toast.error("Storage allocation must be greater than 0 GB");
+      return;
+    }
+    if (storageGb < usedGb) {
+      toast.error(`Allocation cannot be below current usage (${usedGb.toFixed(2)} GB)`);
+      return;
+    }
+    try {
+      await superAdminApi.updateWorkspace(account.organization_id, {
+        storage_quota_bytes: Math.round(storageGb * 1024 ** 3),
+      });
+      refresh();
+      toast.success(`Allocated ${storageGb} GB to “${account.organization_name}”`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update storage allocation");
+    }
+  };
+
+  const demoteAdmin = async (account: SystemUser) => {
     const workspaceLabel = account.organization_name || "their workspace";
     const ok = await confirm({
-      title: demoting ? `Demote ${account.name}?` : `Promote ${account.name}?`,
-      description: demoting
-        ? `Are you sure you want to demote this administrator? ${account.name} will become a regular member of “${workspaceLabel}” and lose admin permissions in NexusStorage.`
-        : `Are you sure you want to promote ${account.name}? They will become a workspace administrator for “${workspaceLabel}” and can manage members and settings.`,
-      confirmLabel: demoting ? "Yes, demote" : "Yes, promote",
-      danger: demoting,
+      title: `Demote ${account.name}?`,
+      description: `${account.name} will become a regular member of “${workspaceLabel}” and lose admin permissions. They will no longer appear in this administrators list.`,
+      confirmLabel: "Yes, demote",
+      danger: true,
     });
     if (!ok) return;
     try {
-      await superAdminApi.updateUser(account.id, { role: demoting ? "user" : "admin" });
+      await superAdminApi.updateUser(account.id, { role: "user" });
       refresh();
-      toast.success(demoting ? `${account.name} is now a member` : `${account.name} is now an administrator`);
+      toast.success(`${account.name} is now a member`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Update failed");
     }
@@ -72,7 +116,7 @@ export function AdministratorsView() {
     const ok = await confirm({
       title: suspending ? `Suspend ${account.name}?` : `Activate ${account.name}?`,
       description: suspending
-        ? `Are you sure you want to suspend this account? ${account.name} will temporarily lose access to NexusStorage until you activate them again.`
+        ? `Are you sure you want to suspend this administrator? ${account.name} will temporarily lose access to NexusStorage until you activate them again.`
         : `${account.name} will regain access to NexusStorage and can sign in again.`,
       confirmLabel: suspending ? "Yes, suspend" : "Yes, activate",
       danger: suspending,
@@ -124,8 +168,10 @@ export function AdministratorsView() {
       {confirmModal}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h2 className="font-semibold">Administrators &amp; members</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Accounts across every workspace</p>
+          <h2 className="font-semibold">Administrators</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Workspace admins only — allocate total storage here; members stay under each admin
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, email or workspace…" className="text-sm px-3 py-2 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50" />
@@ -156,31 +202,50 @@ export function AdministratorsView() {
 
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         {isLoading ? (
-          <p className="p-6 text-sm text-muted-foreground text-center">Loading accounts…</p>
+          <p className="p-6 text-sm text-muted-foreground text-center">Loading administrators…</p>
         ) : filtered.length === 0 ? (
-          <p className="p-6 text-sm text-muted-foreground text-center">No matching accounts</p>
-        ) : filtered.map((account, index) => (
-          <div key={account.id} className={cn("flex items-center gap-4 px-4 py-3.5 flex-wrap", index !== filtered.length - 1 && "border-b border-border")}>
-            <AppAvatar initials={account.name.split(" ").map(part => part[0]).join("").slice(0, 2)} color={AVATAR_COLORS[index % AVATAR_COLORS.length]} />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium truncate">{account.name}</p>
-              <p className="text-xs text-muted-foreground truncate">{account.email} · {account.organization_name || "no workspace"}</p>
+          <p className="p-6 text-sm text-muted-foreground text-center">No administrators found</p>
+        ) : filtered.map((account, index) => {
+          const used = account.storage_used || 0;
+          const quota = account.storage_quota_bytes || 0;
+          const workspace = account.organization_id ? workspaceById[account.organization_id] : undefined;
+          const userCount = workspace?.user_count ?? null;
+          return (
+            <div key={account.id} className={cn("flex items-center gap-4 px-4 py-3.5 flex-wrap", index !== filtered.length - 1 && "border-b border-border")}>
+              <AppAvatar initials={account.name.split(" ").map(part => part[0]).join("").slice(0, 2)} color={AVATAR_COLORS[index % AVATAR_COLORS.length]} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{account.name}</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {account.email} · {account.organization_name || "no workspace"}
+                  {userCount != null ? ` · ${userCount} user${userCount === 1 ? "" : "s"}` : ""}
+                </p>
+                {account.organization_id ? (
+                  <div className="mt-2 max-w-xs">
+                    <StorageMeter usedGb={used / 1024 ** 3} totalGb={quota / 1024 ** 3} compact />
+                  </div>
+                ) : null}
+              </div>
+              <AppBadge variant="warning">admin</AppBadge>
+              <AppBadge variant={account.is_active ? "success" : "danger"}>{account.is_active ? "active" : "suspended"}</AppBadge>
+              <div className="flex items-center gap-2">
+                {account.organization_id ? (
+                  <button onClick={() => allocateWorkspaceStorage(account)} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-secondary hover:bg-primary hover:text-primary-foreground transition-colors">
+                    <HardDrive className="w-3.5 h-3.5" /> Allocate
+                  </button>
+                ) : null}
+                <button onClick={() => demoteAdmin(account)} className="text-xs px-2.5 py-1.5 rounded-lg bg-secondary hover:bg-primary hover:text-primary-foreground transition-colors">
+                  Demote
+                </button>
+                <button onClick={() => toggleActive(account)} className="text-xs px-2.5 py-1.5 rounded-lg bg-secondary hover:bg-primary hover:text-primary-foreground transition-colors">
+                  {account.is_active ? "Suspend" : "Activate"}
+                </button>
+                <button onClick={() => resetPassword(account)} className="text-xs px-2.5 py-1.5 rounded-lg bg-secondary hover:bg-primary hover:text-primary-foreground transition-colors">
+                  Reset password
+                </button>
+              </div>
             </div>
-            <AppBadge variant={account.role === "admin" ? "warning" : "muted"}>{account.role}</AppBadge>
-            <AppBadge variant={account.is_active ? "success" : "danger"}>{account.is_active ? "active" : "suspended"}</AppBadge>
-            <div className="flex items-center gap-2">
-              <button onClick={() => changeRole(account)} className="text-xs px-2.5 py-1.5 rounded-lg bg-secondary hover:bg-primary hover:text-primary-foreground transition-colors">
-                {account.role === "admin" ? "Demote" : "Promote"}
-              </button>
-              <button onClick={() => toggleActive(account)} className="text-xs px-2.5 py-1.5 rounded-lg bg-secondary hover:bg-primary hover:text-primary-foreground transition-colors">
-                {account.is_active ? "Suspend" : "Activate"}
-              </button>
-              <button onClick={() => resetPassword(account)} className="text-xs px-2.5 py-1.5 rounded-lg bg-secondary hover:bg-primary hover:text-primary-foreground transition-colors">
-                Reset password
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

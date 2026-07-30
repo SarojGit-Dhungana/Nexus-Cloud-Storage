@@ -189,7 +189,6 @@ export function DashboardView({ user }: { user: UserProfile }) {
                     {" · "}
                     {log.action_label || String(log.action).replaceAll("_", " ")}
                   </p>
-                  <p className="text-xs text-muted-foreground truncate">{log.file_name}</p>
                   <p className="text-[10px] text-muted-foreground/60 mt-0.5">{new Date(log.timestamp).toLocaleString()}</p>
                 </div>
               </div>

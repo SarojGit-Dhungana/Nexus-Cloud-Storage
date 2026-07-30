@@ -5,8 +5,6 @@ import { Portal, portalHome } from "../api";
 export function PortalLanding() {
   const invite = new URLSearchParams(window.location.search).get("invite");
   if (invite) return <Navigate to={`/user/?invite=${encodeURIComponent(invite)}`} replace />;
-
-  // Simple list a junior can edit — id, title, short description, icon
   const portals: { id: Portal; title: string; blurb: string; icon: React.ElementType; accent: "green" | "red" }[] = [
     { id: "user", title: "User portal", blurb: "Files, sharing, trash, and AI assistant", icon: User, accent: "green" },
     { id: "admin", title: "Admin portal", blurb: "Workspace analytics, members, and settings", icon: Shield, accent: "green" },

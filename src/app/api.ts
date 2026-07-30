@@ -43,6 +43,8 @@ export interface SystemUser {
   two_factor_enabled: boolean;
   organization_id: string | null;
   organization_name: string | null;
+  storage_quota_bytes: number | null;
+  storage_used: number;
 }
 
 export interface SystemOverview {
@@ -440,10 +442,21 @@ export const adminApi = {
   async users() {
     return pageResults(await apiRequest<{ results: ApiUser[] }>("/auth/users/"));
   },
-  updateUser: (id: string, changes: { role?: "admin" | "user"; is_active?: boolean }) =>
+  createUser: (payload: {
+    name: string;
+    email: string;
+    password: string;
+    role?: "admin" | "user";
+  }) =>
+    apiRequest<ApiUser>("/auth/users/", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateUser: (id: string, changes: { role?: "admin" | "user"; is_active?: boolean; storage_quota_bytes?: number | null }) =>
     apiRequest<ApiUser>(`/auth/users/${id}/`, { method: "PATCH", body: JSON.stringify(changes) }),
+  deleteUser: (id: string) => apiRequest<void>(`/auth/users/${id}/`, { method: "DELETE" }),
   invite: (email: string, role: "admin" | "user" = "user") =>
-    apiRequest<{ invite_url: string; expires_at: string }>("/auth/invitations/", {
+    apiRequest<{ invite_url: string; expires_at: string; email_sent?: boolean }>("/auth/invitations/", {
       method: "POST",
       body: JSON.stringify({ email, role }),
     }),
@@ -464,6 +477,7 @@ export const superAdminApi = {
   },
   createWorkspace: (payload: {
     name: string;
+    storage_quota_bytes?: number;
     admin_name?: string;
     admin_email?: string;
     admin_password?: string;

@@ -6,7 +6,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR.parent / ".env")
+# override=True so .env always wins over stale shell/OS EMAIL_* variables
+load_dotenv(BASE_DIR.parent / ".env", override=True)
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "unsafe-development-key-change-me")
 DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() == "true"
@@ -148,19 +149,21 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
 SECURE_HSTS_PRELOAD = not DEBUG
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-# Email: defaults to console so invite/share notifications print to the server log in dev.
-# For real delivery (e.g. Gmail), set EMAIL_BACKEND to smtp and configure the host/credentials.
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
-EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+# Email: use SMTP whenever Gmail credentials are present (Share → Send needs real delivery).
+EMAIL_BACKEND = (os.getenv("EMAIL_BACKEND") or "django.core.mail.backends.console.EmailBackend").strip().strip('"').strip("'")
+EMAIL_HOST = (os.getenv("EMAIL_HOST") or "smtp.gmail.com").strip()
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").lower() == "true"
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+# Gmail App Passwords are often copied with spaces — strip them for SMTP auth.
+EMAIL_HOST_USER = (os.getenv("EMAIL_HOST_USER") or "").strip()
+EMAIL_HOST_PASSWORD = (os.getenv("EMAIL_HOST_PASSWORD") or "").replace(" ", "").strip()
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "15"))
-DEFAULT_FROM_EMAIL = os.getenv(
-    "DEFAULT_FROM_EMAIL",
-    f"NexusStorage <{EMAIL_HOST_USER}>" if EMAIL_HOST_USER else "NexusStorage <no-reply@nexusstorage.local>",
-)
+if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+DEFAULT_FROM_EMAIL = (
+    os.getenv("DEFAULT_FROM_EMAIL")
+    or (f"NexusStorage <{EMAIL_HOST_USER}>" if EMAIL_HOST_USER else "NexusStorage <no-reply@nexusstorage.local>")
+).strip()
 if "test" in sys.argv:
     EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
     SECURE_SSL_REDIRECT = False
@@ -168,6 +171,12 @@ if "test" in sys.argv:
     CSRF_COOKIE_SECURE = False
     if "testserver" not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append("testserver")
+elif EMAIL_BACKEND.endswith("smtp.EmailBackend"):
+    # Visible in the backend console so you can confirm SMTP after restart.
+    print(
+        f"[email] SMTP ready via {EMAIL_HOST}:{EMAIL_PORT} as {EMAIL_HOST_USER}",
+        flush=True,
+    )
 
 # Default system super administrator, created automatically on migrate.
 # Override in .env and change the password after the first sign-in.
@@ -186,3 +195,9 @@ AI_MODEL = os.getenv("AI_MODEL", "llama3.2:3b")
 AI_BASE_URL = os.getenv("AI_BASE_URL", "http://localhost:11434/v1")
 AI_API_KEY = os.getenv("AI_API_KEY", "ollama")
 AI_TIMEOUT_SECONDS = int(os.getenv("AI_TIMEOUT_SECONDS", "60"))
+
+# Local trainable file-analysis model (no external AI APIs).
+FILE_ANALYSIS_ENABLED = os.getenv("FILE_ANALYSIS_ENABLED", "true").lower() == "true"
+FILE_ANALYSIS_MAX_SENTENCES = int(os.getenv("FILE_ANALYSIS_MAX_SENTENCES", "5"))
+# 0 = extract full file text (any size). Set a positive number to soft-cap chars.
+FILE_ANALYSIS_MAX_EXTRACT_CHARS = int(os.getenv("FILE_ANALYSIS_MAX_EXTRACT_CHARS", "0"))

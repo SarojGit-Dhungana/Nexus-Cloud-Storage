@@ -4,7 +4,8 @@ from datetime import timedelta
 
 import qrcode
 from django.conf import settings
-from django.db.models import Count, Q, Sum
+from django.db.models import BigIntegerField, Count, OuterRef, Q, Subquery, Sum, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
@@ -16,7 +17,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 import pyotp
 
-from config.mailer import send_notification
+from .emails import send_account_credentials_email, send_invitation_email
 from .models import Invitation, Organization, User
 from .permissions import IsOrganizationAdmin, IsSuperAdmin
 from .security import decrypt_secret, encrypt_secret
@@ -27,6 +28,7 @@ from .serializers import (
     InvitationCreateSerializer,
     LoginSerializer,
     OrganizationSerializer,
+    OrganizationUserCreateSerializer,
     PasswordChangeSerializer,
     ProfileUpdateSerializer,
     RegisterSerializer,
@@ -38,6 +40,24 @@ from .serializers import (
     WorkspaceSerializer,
     portal_for_role,
 )
+
+
+def _annotate_org_storage_used(queryset):
+    from storage.models import FileNode
+
+    org_used = (
+        FileNode.objects.filter(
+            organization_id=OuterRef("organization_id"),
+            node_type="file",
+            deleted_at__isnull=True,
+        )
+        .values("organization_id")
+        .annotate(total=Sum("size_bytes"))
+        .values("total")[:1]
+    )
+    return queryset.annotate(
+        org_storage_used=Coalesce(Subquery(org_used, output_field=BigIntegerField()), Value(0))
+    )
 
 
 def _qr_data_uri(payload):
@@ -129,6 +149,33 @@ class TwoFactorSetupView(APIView):
         user.save(update_fields=("totp_secret_encrypted", "totp_enabled", "totp_drift_steps"))
         issuer = user.organization.name if user.organization_id else "NexusStorage"
         uri = provisioning_uri(secret, user.email, issuer)
+        # #region agent log
+        try:
+            import hashlib, json, time as _time
+            from urllib.parse import parse_qs, urlparse
+            uri_secret = parse_qs(urlparse(uri).query).get("secret", [""])[0]
+            open(r"d:\Self-Project\Cloud Storage\debug-cbe2cb.log", "a", encoding="utf-8").write(
+                json.dumps({
+                    "sessionId": "cbe2cb",
+                    "hypothesisId": "A,D",
+                    "location": "accounts/views.py:TwoFactorSetupView",
+                    "message": "2fa setup created secret",
+                    "data": {
+                        "secretLen": len(secret),
+                        "secretHash": hashlib.sha256(secret.encode()).hexdigest()[:12],
+                        "uriSecretHash": hashlib.sha256(uri_secret.encode()).hexdigest()[:12] if uri_secret else None,
+                        "uriSecretMatches": uri_secret == secret,
+                        "issuer": issuer[:40],
+                        "qrLen": len(_qr_data_uri(uri)),
+                        "serverUnix": int(_time.time()),
+                    },
+                    "timestamp": int(_time.time() * 1000),
+                    "runId": "pre-fix",
+                }) + "\n"
+            )
+        except Exception:
+            pass
+        # #endregion
         return Response({"secret": secret, "provisioning_uri": uri, "qr_code": _qr_data_uri(uri)})
 
 
@@ -141,12 +188,67 @@ class TwoFactorConfirmView(APIView):
             return Response({"detail": "Start two-factor setup first."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             secret = decrypt_secret(user.totp_secret_encrypted)
-        except Exception:
+        except Exception as decrypt_error:
+            # #region agent log
+            try:
+                import json, time as _time
+                open(r"d:\Self-Project\Cloud Storage\debug-cbe2cb.log", "a", encoding="utf-8").write(
+                    json.dumps({
+                        "sessionId": "cbe2cb",
+                        "hypothesisId": "A",
+                        "location": "accounts/views.py:TwoFactorConfirmView",
+                        "message": "2fa confirm decrypt failed",
+                        "data": {"errorType": type(decrypt_error).__name__},
+                        "timestamp": int(_time.time() * 1000),
+                        "runId": "pre-fix",
+                    }) + "\n"
+                )
+            except Exception:
+                pass
+            # #endregion
             return Response(
                 {"detail": "Saved authenticator secret could not be read. Start setup again."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        drift_steps = find_enrollment_drift(secret, request.data.get("otp", ""))
+        raw_otp = request.data.get("otp", "")
+        drift_steps = find_enrollment_drift(secret, raw_otp)
+        # #region agent log
+        try:
+            import hashlib, json, time as _time
+            from accounts.totp import normalize_code, normalize_secret
+            import pyotp as _pyotp
+            code = normalize_code(raw_otp)
+            totp = _pyotp.TOTP(normalize_secret(secret))
+            server_now = totp.now()
+            counter = int(_time.time()) // int(totp.interval)
+            nearby = []
+            for off in (-2, -1, 0, 1, 2):
+                cand = str(totp.generate_otp(counter + off))
+                nearby.append({"off": off, "match": cand == code})
+            open(r"d:\Self-Project\Cloud Storage\debug-cbe2cb.log", "a", encoding="utf-8").write(
+                json.dumps({
+                    "sessionId": "cbe2cb",
+                    "hypothesisId": "A,B,C",
+                    "location": "accounts/views.py:TwoFactorConfirmView",
+                    "message": "2fa confirm attempted",
+                    "data": {
+                        "secretLen": len(secret),
+                        "secretHash": hashlib.sha256(secret.encode()).hexdigest()[:12],
+                        "rawOtpType": type(raw_otp).__name__,
+                        "rawOtpLen": len(str(raw_otp)),
+                        "normalizedOtpLen": len(code),
+                        "otpEqualsServerNow": code == server_now,
+                        "nearbyMatches": nearby,
+                        "driftSteps": drift_steps,
+                        "serverUnix": int(_time.time()),
+                    },
+                    "timestamp": int(_time.time() * 1000),
+                    "runId": "pre-fix",
+                }) + "\n"
+            )
+        except Exception:
+            pass
+        # #endregion
         if drift_steps is None:
             return Response(
                 {
@@ -261,6 +363,17 @@ class WorkspaceListCreateView(generics.ListCreateAPIView):
         serializer = WorkspaceCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         organization = serializer.save()
+        admin_email = (serializer.validated_data.get("admin_email") or "").strip()
+        if admin_email:
+            admin = User.objects.get(email=admin_email, organization=organization)
+            send_account_credentials_email(
+                to_email=admin.email,
+                display_name=admin.display_name,
+                password=serializer.validated_data["admin_password"],
+                role=admin.role,
+                organization_name=organization.name,
+                invited_by_name=request.user.display_name or "System administrator",
+            )
         return Response(
             WorkspaceSerializer(self.get_queryset().get(pk=organization.pk)).data,
             status=status.HTTP_201_CREATED,
@@ -300,7 +413,9 @@ class SystemUserListCreateView(generics.ListCreateAPIView):
     ordering_fields = ("date_joined", "display_name", "email")
 
     def get_queryset(self):
-        queryset = User.objects.exclude(role=User.Role.SUPER_ADMIN).select_related("organization")
+        queryset = _annotate_org_storage_used(
+            User.objects.exclude(role=User.Role.SUPER_ADMIN).select_related("organization")
+        )
         role = self.request.query_params.get("role")
         if role:
             queryset = queryset.filter(role=role)
@@ -316,7 +431,18 @@ class SystemUserListCreateView(generics.ListCreateAPIView):
         serializer = SystemAdminCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        return Response(SystemUserSerializer(user).data, status=status.HTTP_201_CREATED)
+        send_account_credentials_email(
+            to_email=user.email,
+            display_name=user.display_name,
+            password=serializer.validated_data["password"],
+            role=user.role,
+            organization_name=user.organization.name if user.organization_id else None,
+            invited_by_name=request.user.display_name or "System administrator",
+        )
+        annotated = _annotate_org_storage_used(
+            User.objects.filter(pk=user.pk).select_related("organization")
+        ).get()
+        return Response(SystemUserSerializer(annotated).data, status=status.HTTP_201_CREATED)
 
 
 class SystemUserDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -325,7 +451,9 @@ class SystemUserDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsSuperAdmin]
 
     def get_queryset(self):
-        return User.objects.exclude(role=User.Role.SUPER_ADMIN).select_related("organization")
+        return _annotate_org_storage_used(
+            User.objects.exclude(role=User.Role.SUPER_ADMIN).select_related("organization")
+        )
 
     def get_serializer_class(self):
         return SystemUserUpdateSerializer if self.request.method in ("PUT", "PATCH") else SystemUserSerializer
@@ -335,7 +463,18 @@ class SystemUserDetailView(generics.RetrieveUpdateDestroyAPIView):
         serializer = SystemUserUpdateSerializer(user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(SystemUserSerializer(user).data)
+        new_password = serializer.validated_data.get("password")
+        if new_password:
+            send_account_credentials_email(
+                to_email=user.email,
+                display_name=user.display_name,
+                password=new_password,
+                role=user.role,
+                organization_name=user.organization.name if user.organization_id else None,
+                invited_by_name=request.user.display_name or "System administrator",
+            )
+        annotated = self.get_queryset().get(pk=user.pk)
+        return Response(SystemUserSerializer(annotated).data)
 
 
 class SystemOverviewView(APIView):
@@ -358,8 +497,7 @@ class SystemOverviewView(APIView):
         )
 
 
-class UserListView(generics.ListAPIView):
-    serializer_class = UserSerializer
+class UserListView(generics.ListCreateAPIView):
     permission_classes = [IsOrganizationAdmin]
     search_fields = ("display_name", "email")
     ordering_fields = ("date_joined", "display_name", "email")
@@ -371,8 +509,29 @@ class UserListView(generics.ListAPIView):
             .order_by("-date_joined")
         )
 
+    def get_serializer_class(self):
+        return OrganizationUserCreateSerializer if self.request.method == "POST" else UserSerializer
 
-class UserDetailView(generics.RetrieveUpdateAPIView):
+    def create(self, request, *args, **kwargs):
+        serializer = OrganizationUserCreateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        send_account_credentials_email(
+            to_email=user.email,
+            display_name=user.display_name,
+            password=serializer.validated_data["password"],
+            role=user.role,
+            organization_name=request.user.organization.name,
+            invited_by_name=request.user.display_name or "Administrator",
+        )
+        # Re-fetch with storage annotation so the response matches list shape.
+        created = self.get_queryset().get(pk=user.pk)
+        return Response(UserSerializer(created).data, status=status.HTTP_201_CREATED)
+
+
+class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Workspace admin: update role/status/storage, or permanently delete a member."""
+
     permission_classes = [IsOrganizationAdmin]
 
     def get_queryset(self):
@@ -385,8 +544,11 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
         user = self.get_object()
         next_role = serializer.validated_data.get("role", user.role)
         next_active = serializer.validated_data.get("is_active", user.is_active)
+        suspending = user.is_active and not next_active
         if user == self.request.user and (next_role != "admin" or not next_active):
-            raise ValidationError("You cannot remove your own active administrator access.")
+            raise ValidationError("You cannot suspend yourself or remove your own administrator access.")
+        if suspending and user.role == User.Role.ADMIN:
+            raise ValidationError("Administrators can only suspend regular users, not other admins.")
         if user.role == "admin" and (next_role != "admin" or not next_active):
             active_admins = User.objects.filter(
                 organization=user.organization, role="admin", is_active=True
@@ -394,6 +556,24 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
             if active_admins <= 1:
                 raise ValidationError("The organization must retain at least one active administrator.")
         serializer.save()
+
+    def perform_destroy(self, instance):
+        # Simple rules: never delete yourself; only delete regular members (not other admins).
+        if instance == self.request.user:
+            raise ValidationError("You cannot delete your own account.")
+        if instance.role == User.Role.ADMIN:
+            raise ValidationError("Administrators can only delete regular users, not other admins.")
+
+        # Remove stored file bytes before the DB cascade deletes FileNode rows.
+        from storage.models import FileNode
+
+        for node in FileNode.objects.filter(owner=instance):
+            if node.content:
+                try:
+                    node.content.delete(save=False)
+                except Exception:
+                    pass
+        instance.delete()
 
 
 class InvitationCreateView(APIView):
@@ -417,16 +597,12 @@ class InvitationCreateView(APIView):
         )
         invite_url = f"{settings.FRONTEND_URL}/user/?invite={raw_token}"
         organization = request.user.organization
-        emailed = send_notification(
-            subject=f"You're invited to {organization.name} on NexusStorage",
-            body=(
-                f"{request.user.display_name} invited you to join the "
-                f"'{organization.name}' workspace on NexusStorage as a {invitation.role}.\n\n"
-                f"Accept your invitation (valid for 7 days):\n{invite_url}\n\n"
-                "If you did not expect this email you can ignore it."
-            ),
-            to=email,
-            fail_silently=True,
+        emailed = send_invitation_email(
+            to_email=email,
+            role=invitation.role,
+            organization_name=organization.name,
+            invited_by_name=request.user.display_name or "Administrator",
+            invite_url=invite_url,
         )
         return Response(
             {

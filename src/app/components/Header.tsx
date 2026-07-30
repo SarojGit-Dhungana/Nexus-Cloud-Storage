@@ -117,10 +117,12 @@ export function Header({
                     {sealed ? (
                       <p className="text-[11px] font-mono text-muted-foreground mt-0.5 truncate flex items-center gap-1">
                         <Lock className="w-3 h-3 text-primary flex-shrink-0" />
-                        {n.action} · {n.file_name}
+                        {String(n.action_label || n.action).replaceAll("_", " ")}
                       </p>
                     ) : (
-                      <p className="text-sm leading-snug text-muted-foreground">{String(n.action).replaceAll("_", " ")} {n.file_name}</p>
+                      <p className="text-sm leading-snug text-muted-foreground">
+                        {String(n.action_label || n.action).replaceAll("_", " ")}
+                      </p>
                     )}
                     <p className="text-xs text-muted-foreground mt-0.5">{new Date(n.timestamp).toLocaleString()}</p>
                   </div>

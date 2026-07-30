@@ -1,4 +1,3 @@
-import { toast } from "sonner";
 import { Archive, FileCode, FileImage, FileText, FileVideo, Folder } from "lucide-react";
 import { ApiError, ApiFile, ApiUser, fileApi } from "../api";
 import { BRAND } from "./brand";
@@ -7,39 +6,72 @@ import type { FileItem, FileType, UserProfile } from "../types/app-types";
 
 export const NEXUS_FILE_MIME = "application/x-nexus-file-id";
 
+export type UploadScanProgress = {
+  status: "scanning" | "uploading" | "success" | "error";
+  fileName: string;
+  index: number;
+  total: number;
+  message: string;
+};
+
 /** Scan every file first; only upload after the antivirus API allows it. */
-export async function uploadFilesWithVirusScan(files: File[], parent?: string) {
+export async function uploadFilesWithVirusScan(
+  files: File[],
+  parent?: string,
+  onProgress?: (progress: UploadScanProgress) => void,
+) {
   const list = Array.from(files);
   if (!list.length) return [];
-  const toastId = toast.loading(
-    list.length === 1
-      ? `Scanning "${list[0].name}" for viruses…`
-      : `Scanning ${list.length} files for viruses…`,
-  );
-  const saved = [];
+  const total = list.length;
+  const saved: ApiFile[] = [];
+
+  const report = (partial: Omit<UploadScanProgress, "total">) => {
+    onProgress?.({ ...partial, total });
+  };
+
   try {
-    for (const file of list) {
-      toast.loading(`Scanning "${file.name}"…`, { id: toastId });
+    for (let index = 0; index < list.length; index += 1) {
+      const file = list[index];
+      report({
+        status: "scanning",
+        fileName: file.name,
+        index,
+        message: `Scanning "${file.name}" for viruses and duplicate content…`,
+      });
       const scan = await fileApi.scan(file);
       if (!scan.clean || !scan.allowed) {
         throw new Error(scan.detail || `Virus detected (${scan.threat}). Upload blocked.`);
       }
-      toast.loading(`Clean — uploading "${file.name}"…`, { id: toastId });
+      report({
+        status: "uploading",
+        fileName: file.name,
+        index,
+        message: `Clean — uploading "${file.name}"…`,
+      });
       saved.push(await fileApi.store(file, parent));
     }
-    toast.success(
-      saved.length === 1
-        ? `Scanned clean and uploaded "${saved[0].name}"`
-        : `Scanned clean and uploaded ${saved.length} files`,
-      { id: toastId },
-    );
+    report({
+      status: "success",
+      fileName: saved.length === 1 ? saved[0].name : `${saved.length} files`,
+      index: Math.max(total - 1, 0),
+      message:
+        saved.length === 1
+          ? `Scanned clean and uploaded "${saved[0].name}".`
+          : `Scanned clean and uploaded ${saved.length} files.`,
+    });
     return saved;
   } catch (error) {
     if (error instanceof ApiError && error.status === 413) {
-      toast.dismiss(toastId);
       throw error;
     }
-    toast.error(error instanceof Error ? error.message : "Upload blocked by virus scan", { id: toastId });
+    const message = error instanceof Error ? error.message : "Upload blocked by virus scan";
+    const current = list[Math.min(saved.length, list.length - 1)];
+    report({
+      status: "error",
+      fileName: current?.name || "",
+      index: Math.min(saved.length, Math.max(total - 1, 0)),
+      message,
+    });
     throw error;
   }
 }

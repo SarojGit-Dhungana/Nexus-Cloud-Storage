@@ -29,7 +29,8 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "allow_self_registration",
             "is_active",
         )
-        read_only_fields = ("id", "slug", "is_active")
+        # Super admin allocates storage_quota_bytes via system workspace APIs.
+        read_only_fields = ("id", "slug", "is_active", "storage_quota_bytes")
 
     def validate_require_two_factor(self, value):
         request = self.context.get("request")
@@ -210,6 +211,59 @@ class AdminUserUpdateSerializer(serializers.ModelSerializer):
         model = User
         fields = ("role", "is_active", "storage_quota_bytes")
 
+    def validate_storage_quota_bytes(self, value):
+        if value is None:
+            return value
+        if value < 1:
+            raise serializers.ValidationError("Personal storage allocation must be at least 1 byte.")
+        organization = self.instance.organization if self.instance else None
+        if organization and value > organization.storage_quota_bytes:
+            raise serializers.ValidationError(
+                "Personal allocation cannot exceed the workspace storage allocated by the super admin."
+            )
+        used = (
+            self.instance.owned_nodes.filter(node_type="file", deleted_at__isnull=True).aggregate(
+                total=Sum("size_bytes")
+            )["total"]
+            or 0
+        )
+        if value < used:
+            raise serializers.ValidationError(
+                f"Allocation cannot be below current usage ({used} bytes)."
+            )
+        return value
+
+
+class OrganizationUserCreateSerializer(serializers.Serializer):
+    """Workspace admin: create a member directly in their own organization."""
+
+    name = serializers.CharField(max_length=160)
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True, min_length=8)
+    role = serializers.ChoiceField(
+        choices=(User.Role.ADMIN, User.Role.USER), default=User.Role.USER
+    )
+
+    def validate_email(self, value):
+        value = value.lower().strip()
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("An account with this email already exists.")
+        return value
+
+    def validate_password(self, value):
+        validate_password(value)
+        return value
+
+    def create(self, validated_data):
+        organization = self.context["request"].user.organization
+        return User.objects.create_user(
+            email=validated_data["email"],
+            password=validated_data["password"],
+            display_name=validated_data["name"],
+            organization=organization,
+            role=validated_data["role"],
+        )
+
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source="display_name", max_length=160)
@@ -314,6 +368,23 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "slug", "created_at", "user_count", "admin_count", "storage_used")
 
+    def validate_storage_quota_bytes(self, value):
+        if value is None or value < 1:
+            raise serializers.ValidationError("Storage allocation must be at least 1 byte.")
+        used = getattr(self.instance, "storage_used", None) if self.instance else None
+        if used is None and self.instance is not None:
+            used = (
+                self.instance.nodes.filter(node_type="file", deleted_at__isnull=True).aggregate(
+                    total=Sum("size_bytes")
+                )["total"]
+                or 0
+            )
+        if used and value < used:
+            raise serializers.ValidationError(
+                f"Allocation cannot be below current usage ({used} bytes)."
+            )
+        return value
+
 
 class WorkspaceCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=160)
@@ -368,6 +439,10 @@ class SystemUserSerializer(serializers.ModelSerializer):
     organization_id = serializers.UUIDField(read_only=True)
     organization_name = serializers.CharField(source="organization.name", read_only=True, default=None)
     two_factor_enabled = serializers.BooleanField(source="totp_enabled", read_only=True)
+    storage_quota_bytes = serializers.IntegerField(
+        source="organization.storage_quota_bytes", read_only=True, default=None
+    )
+    storage_used = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -382,8 +457,23 @@ class SystemUserSerializer(serializers.ModelSerializer):
             "two_factor_enabled",
             "organization_id",
             "organization_name",
+            "storage_quota_bytes",
+            "storage_used",
         )
         read_only_fields = fields
+
+    def get_storage_used(self, obj):
+        if not obj.organization_id:
+            return 0
+        annotated = getattr(obj, "org_storage_used", None)
+        if annotated is not None:
+            return annotated
+        return (
+            obj.organization.nodes.filter(node_type="file", deleted_at__isnull=True).aggregate(
+                total=Sum("size_bytes")
+            )["total"]
+            or 0
+        )
 
 
 class SystemAdminCreateSerializer(serializers.Serializer):

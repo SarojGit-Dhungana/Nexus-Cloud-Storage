@@ -44,7 +44,20 @@ class FileNodeSerializer(serializers.ModelSerializer):
         )
 
     def get_shared(self, obj):
-        return bool(getattr(obj, "share_count", 0) or obj.share_grants.exists() or obj.share_links.filter(is_active=True).exists())
+        # True when you shared it out, OR when someone shared it with you (accepted).
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        if user and getattr(user, "is_authenticated", False) and obj.owner_id != user.id:
+            if obj.share_grants.filter(
+                recipient=user,
+                status=ShareGrant.Status.ACCEPTED,
+            ).exists():
+                return True
+        return bool(
+            getattr(obj, "share_count", 0)
+            or obj.share_grants.exists()
+            or obj.share_links.filter(is_active=True).exists()
+        )
 
     def validate_parent(self, parent):
         request = self.context["request"]
@@ -109,7 +122,7 @@ class FileUploadSerializer(serializers.Serializer):
         return parent
 
     def validate_file(self, value):
-        from .antivirus import scan_uploaded_file
+        from .upload_malware_scanner import scan_upload_for_malware
 
         user = self.context["request"].user
         if not user.organization_id:
@@ -118,7 +131,7 @@ class FileUploadSerializer(serializers.Serializer):
             raise serializers.ValidationError("File exceeds the organization's maximum file size.")
 
         # Virus scan runs here so every upload path is blocked before save.
-        scan = scan_uploaded_file(value)
+        scan = scan_upload_for_malware(value)
         if scan.rejected:
             raise serializers.ValidationError(
                 f"Virus/malware detected ({scan.threat}). Upload blocked — file was not stored."
@@ -131,9 +144,9 @@ class FileScanSerializer(serializers.Serializer):
     file = serializers.FileField()
 
     def validate_file(self, value):
-        from .antivirus import scan_uploaded_file
+        from .upload_malware_scanner import scan_upload_for_malware
 
-        scan = scan_uploaded_file(value)
+        scan = scan_upload_for_malware(value)
         self.context["antivirus_scan"] = scan
         if scan.rejected:
             # Keep the file field valid so the view can return a structured scan payload.
@@ -200,6 +213,7 @@ class ActivityLogSerializer(serializers.ModelSerializer):
     ACTION_LABELS = {
         "uploaded": "Uploaded",
         "upload_rejected_virus": "Upload blocked (virus)",
+        "upload_rejected_duplicate": "Upload blocked (duplicate content)",
         "downloaded": "Downloaded",
         "previewed": "Previewed",
         "created_folder": "Created folder",
@@ -218,6 +232,7 @@ class ActivityLogSerializer(serializers.ModelSerializer):
     ACTION_TYPES = {
         "uploaded": "upload",
         "upload_rejected_virus": "delete",
+        "upload_rejected_duplicate": "delete",
         "downloaded": "download",
         "previewed": "download",
         "created_folder": "create",

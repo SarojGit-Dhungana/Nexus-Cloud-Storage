@@ -4,6 +4,7 @@ AI assistant service.
 Beginner tip:
 - AssistantService is one class that owns "build context" + "answer question".
 - Views create the class, then call .answer(...) — easy to read and test.
+- File content questions are handled by the local trainable summarizer first.
 """
 
 import json
@@ -14,6 +15,8 @@ from django.db.models import Q, Sum
 
 from storage.models import FileNode, ShareGrant
 
+from .file_analysis import FileAnalysisService
+
 
 class AssistantService:
     """
@@ -22,7 +25,8 @@ class AssistantService:
     """
 
     SYSTEM_PROMPT = """You are NexusStorage Assistant, a privacy-conscious cloud-storage copilot.
-Answer only from the supplied account context. Never claim to have read file contents: only metadata is available.
+Answer from the supplied account context. File contents are analyzed by a separate local model
+when the user asks to summarize or analyze a specific file — do not invent file contents.
 Help users locate files, understand storage usage, review sharing, and improve organization.
 Do not reveal another organization's data. Do not invent counts or filenames.
 For destructive actions, explain the steps but never claim the action already happened.
@@ -67,6 +71,7 @@ Keep answers concise and practical."""
                 }
                 for node in recent
             ],
+            "file_analysis": FileAnalysisService.model_status(),
         }
 
     def _deterministic_answer(self, message, context):
@@ -91,17 +96,26 @@ Keep answers concise and practical."""
             names = ", ".join(item["name"] for item in context["recent_items"][:10])
             return f"Your recent accessible items are: {names or 'none'}."
 
+        analysis = context.get("file_analysis") or {}
+        trained = "ready" if analysis.get("trained") else "not trained yet"
         return (
             "I can report storage usage, list large or recent files, and summarize shared items. "
-            "Configure Ollama or Groq to enable open-ended AI answers."
+            f"I can also summarize PDF and document contents with the local file-analysis model ({trained}). "
+            'Try: summarize report.pdf'
         )
 
     def answer(self, prompt, history):
         """
         Return (answer_text, model_name).
 
-        Tries the configured AI provider first; falls back to keyword replies.
+        1) Local file analysis for summarize/analyze-file prompts
+        2) Configured AI provider for open-ended metadata chat
+        3) Keyword fallback
         """
+        file_hit = FileAnalysisService(self.user).maybe_answer(prompt)
+        if file_hit is not None:
+            return file_hit
+
         context = self.build_context()
 
         if settings.AI_PROVIDER == "disabled":
