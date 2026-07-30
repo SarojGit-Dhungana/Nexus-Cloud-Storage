@@ -162,16 +162,43 @@ class RegisterSerializer(serializers.Serializer):
 
 class LoginSerializer(TokenObtainPairSerializer):
     otp = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    portal = serializers.ChoiceField(
+        choices=("user", "admin", "system"),
+        required=False,
+        allow_blank=True,
+        write_only=True,
+    )
 
     def validate(self, attrs):
         otp = attrs.pop("otp", "")
+        portal = (attrs.pop("portal", None) or "").strip().lower()
         data = super().validate(attrs)
         if self.user.totp_enabled:
             secret = decrypt_secret(self.user.totp_secret_encrypted)
             if not verify_code(secret, otp, self.user.totp_drift_steps):
                 raise serializers.ValidationError({"otp": "A valid authenticator code is required."})
+
+        expected = portal_for_role(self.user.role)
+        if portal and portal != expected:
+            raise serializers.ValidationError(
+                {
+                    "detail": (
+                        f"This {self.user.role} account can only sign in on the "
+                        f"{expected} portal. Open /{expected} and try again."
+                    )
+                }
+            )
+
         data["user"] = UserSerializer(self.user).data
         return data
+
+
+def portal_for_role(role: str) -> str:
+    if role == User.Role.SUPER_ADMIN:
+        return "system"
+    if role == User.Role.ADMIN:
+        return "admin"
+    return "user"
 
 
 class AdminUserUpdateSerializer(serializers.ModelSerializer):

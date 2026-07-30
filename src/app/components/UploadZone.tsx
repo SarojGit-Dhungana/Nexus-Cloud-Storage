@@ -87,7 +87,7 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
         className={cn(
           "border-2 border-dashed rounded-lg p-12 text-center transition-all cursor-pointer",
           isDragging
-            ? "border-blue-500 bg-blue-50 dark:bg-blue-950/20"
+            ? "border-primary bg-primary/10"
             : "border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600"
         )}
       >

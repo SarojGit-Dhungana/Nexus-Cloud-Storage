@@ -6,10 +6,15 @@ from rest_framework.throttling import ScopedRateThrottle
 from storage.services import log_activity
 from .models import ChatMessage, Conversation
 from .serializers import ChatMessageSerializer, ConversationSerializer, PromptSerializer
-from .services import generate_answer
+from .services import AssistantService
 
 
 class ConversationViewSet(viewsets.ModelViewSet):
+    """
+    OOP view class for chat threads.
+
+    Each method is one HTTP action (list, create, send message, ...).
+    """
     serializer_class = ConversationSerializer
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "ai"
@@ -30,14 +35,18 @@ class ConversationViewSet(viewsets.ModelViewSet):
         user_message = ChatMessage.objects.create(
             conversation=conversation, role=ChatMessage.Role.USER, content=prompt
         )
-        answer, model = generate_answer(request.user, prompt, history)
+
+        # Use the service class (OOP) instead of a loose function
+        assistant = AssistantService(request.user)
+        answer, model = assistant.answer(prompt, history)
+
         assistant_message = ChatMessage.objects.create(
             conversation=conversation,
             role=ChatMessage.Role.ASSISTANT,
             content=answer,
             model=model,
         )
-        if conversation.title == "New conversation":
+        if conversation.title in ("New conversation", "AI Chat", "New AI chat"):
             conversation.title = prompt[:157] + ("..." if len(prompt) > 157 else "")
         conversation.save(update_fields=("title", "updated_at"))
         log_activity(request, "ai_message", metadata={"conversation_id": str(conversation.id), "model": model})
@@ -48,3 +57,12 @@ class ConversationViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=("post",))
+    def clear(self, request, pk=None):
+        """Remove all messages but keep the conversation thread."""
+        conversation = self.get_object()
+        conversation.messages.all().delete()
+        conversation.title = "AI Chat"
+        conversation.save(update_fields=("title", "updated_at"))
+        return Response(ConversationSerializer(conversation).data)

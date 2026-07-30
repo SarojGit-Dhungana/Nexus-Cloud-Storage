@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "accounts",
     "storage",
     "assistant",
+    "messaging",
 ]
 
 MIDDLEWARE = [
@@ -63,8 +64,8 @@ else:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("POSTGRES_DB", "nexusstorage"),
-            "USER": os.getenv("POSTGRES_USER", "nexusstorage"),
+            "NAME": os.getenv("POSTGRES_DB", "nexus_storage"),
+            "USER": os.getenv("POSTGRES_USER", "postgres"),
             "PASSWORD": os.getenv("POSTGRES_PASSWORD", ""),
             "HOST": os.getenv("POSTGRES_HOST", "localhost"),
             "PORT": os.getenv("POSTGRES_PORT", "5432"),

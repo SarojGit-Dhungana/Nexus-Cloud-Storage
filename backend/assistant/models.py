@@ -7,7 +7,7 @@ from django.db import models
 class Conversation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="conversations")
-    title = models.CharField(max_length=160, default="New conversation")
+    title = models.CharField(max_length=160, default="AI Chat")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

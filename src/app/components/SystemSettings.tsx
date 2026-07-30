@@ -1,218 +1,175 @@
-import { Settings, HardDrive, Shield, Bell, Globe } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Switch } from './ui/switch';
-import { Label } from './ui/label';
-import { Button } from './ui/button';
-import { Separator } from './ui/separator';
-import { toast } from 'sonner';
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Database, Globe, Shield, SlidersHorizontal } from "lucide-react";
+import { adminApi, dashboardApi, OrganizationSettings } from "../api";
+import { StorageMeter, useFormPrompt } from "../form-modals";
+import { cn } from "../lib/format";
 
 export function SystemSettings() {
-  const handleSave = () => {
-    toast.success('Settings saved successfully');
+  const queryClient = useQueryClient();
+  const { data: settings } = useQuery({ queryKey: ["admin", "settings"], queryFn: adminApi.settings });
+  const { data: analytics } = useQuery({ queryKey: ["admin", "analytics"], queryFn: dashboardApi.admin });
+  const { promptForm, modal: formModal } = useFormPrompt();
+  const [organizationName, setOrganizationName] = useState("");
+  const [storageLimit, setStorageLimit] = useState(100);
+  const [maxFileSize, setMaxFileSize] = useState(500);
+  useEffect(() => {
+    if (!settings) return;
+    setOrganizationName(settings.name);
+    setStorageLimit(settings.storage_quota_bytes / 1024 ** 3);
+    setMaxFileSize(settings.max_file_size_bytes / 1024 ** 2);
+  }, [settings]);
+  const toggles = {
+    twoFactor: settings?.require_two_factor ?? false,
+    auditLog: settings?.audit_logging ?? false,
+    autoBackup: settings?.automatic_backups ?? false,
+    emailNotifs: settings?.email_notifications ?? false,
+    apiAccess: settings?.api_access ?? false,
+    maintenanceMode: settings?.maintenance_mode ?? false,
+    selfRegistration: settings?.allow_self_registration ?? true,
+  };
+  const fieldMap: Record<keyof typeof toggles, keyof OrganizationSettings> = {
+    twoFactor: "require_two_factor", auditLog: "audit_logging", autoBackup: "automatic_backups",
+    emailNotifs: "email_notifications", apiAccess: "api_access", maintenanceMode: "maintenance_mode",
+    selfRegistration: "allow_self_registration",
+  };
+  const toggle = async (key: keyof typeof toggles, label: string) => {
+    try {
+      const nextValue = !toggles[key];
+      const updated = await adminApi.updateSettings({ [fieldMap[key]]: nextValue });
+      queryClient.setQueryData(["admin", "settings"], updated);
+      toast.success(
+        key === "selfRegistration"
+          ? (nextValue
+            ? "Users can join with your organization slug"
+            : "Self-registration is off — only invite links work")
+          : `${label} ${nextValue ? "enabled" : "disabled"}`,
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Settings update failed");
+    }
+  };
+  const saveGeneral = async () => {
+    try {
+      await adminApi.updateSettings({
+        name: organizationName,
+        storage_quota_bytes: Math.round(storageLimit * 1024 ** 3),
+        max_file_size_bytes: Math.round(maxFileSize * 1024 ** 2),
+      });
+      queryClient.invalidateQueries({ queryKey: ["admin", "settings"] });
+      toast.success("Settings saved");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Settings update failed");
+    }
+  };
+  const clearOrganizationData = async () => {
+    const values = await promptForm({
+      title: "Clear all organization data",
+      description: "This permanently removes files, activity, and chats for this workspace.",
+      fields: [
+        { name: "confirmation", label: `Type "${organizationName}" to confirm`, autoFocus: true },
+        { name: "password", label: "Your account password", type: "password" },
+      ],
+      confirmLabel: "Clear all data",
+      danger: true,
+      requireExact: {
+        field: "confirmation",
+        value: organizationName,
+        mismatchMessage: "Organization name did not match",
+      },
+    });
+    if (!values?.password) return;
+    try {
+      await adminApi.clearOrganizationData(values.confirmation, values.password);
+      queryClient.clear();
+      toast.success("Organization data cleared");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to clear organization data");
+    }
   };
 
-  return (
-    <div className="space-y-6">
+  const ToggleRow = ({ id, label, desc }: { id: keyof typeof toggles; label: string; desc: string }) => (
+    <div className="flex items-center justify-between py-4 border-b border-border last:border-0">
       <div>
-        <h1 className="text-2xl font-semibold mb-1">System Settings</h1>
-        <p className="text-gray-500 dark:text-gray-400">
-          Configure system-wide settings and preferences
-        </p>
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+      </div>
+      <button
+        onClick={() => toggle(id, label)}
+        className={cn("relative w-10 h-5 rounded-full transition-colors", toggles[id] ? "bg-primary" : "bg-secondary")}
+      >
+        <span className={cn("absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform", toggles[id] && "translate-x-5")} />
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      {formModal}
+      <div>
+        <h2 className="font-semibold">System Settings</h2>
+        <p className="text-sm text-muted-foreground mt-0.5">Configure your NexusStorage instance</p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <HardDrive className="w-5 h-5" />
-            <CardTitle>Storage Settings</CardTitle>
-          </div>
-          <CardDescription>
-            Manage storage limits and allocation policies
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Default User Storage Limit</Label>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Storage allocated to new users
-              </p>
+      <div className="bg-card rounded-xl border border-border p-5">
+        <h3 className="text-sm font-semibold mb-1">General</h3>
+        <p className="text-xs text-muted-foreground mb-4">Basic system configuration</p>
+        <div className="space-y-4">
+          <div><label className="text-xs font-medium text-muted-foreground block mb-1.5">Organization name</label><input value={organizationName} onChange={e => setOrganizationName(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg bg-secondary border border-border" /></div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1.5">Organization slug</label>
+            <div className="flex gap-2">
+              <input readOnly value={settings?.slug || ""} className="flex-1 text-sm px-3 py-2 rounded-lg bg-secondary border border-border" />
+              <button type="button" onClick={() => { if (settings?.slug) { navigator.clipboard.writeText(settings.slug); toast.success("Slug copied"); } }} className="text-xs px-3 py-2 rounded-lg bg-primary text-primary-foreground">Copy</button>
             </div>
-            <div className="text-sm font-medium">50 GB</div>
+            <p className="text-[11px] text-muted-foreground mt-1">Users need this slug to create a regular account in your workspace.</p>
           </div>
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Auto-cleanup Trash</Label>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Automatically delete files after 30 days
-              </p>
-            </div>
-            <Switch defaultChecked />
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1.5">Organization storage limit (GB)</label>
+            <input type="number" value={storageLimit} onChange={e => setStorageLimit(Number(e.target.value))} className="w-full text-sm px-3 py-2 rounded-lg bg-secondary border border-border" />
+            {settings && (
+              <div className="mt-3">
+                <StorageMeter
+                  usedGb={(analytics?.total_storage ?? 0) / 1024 ** 3}
+                  totalGb={storageLimit || settings.storage_quota_bytes / 1024 ** 3}
+                  compact
+                />
+              </div>
+            )}
           </div>
+          <div><label className="text-xs font-medium text-muted-foreground block mb-1.5">Max file size (MB)</label><input type="number" value={maxFileSize} onChange={e => setMaxFileSize(Number(e.target.value))} className="w-full text-sm px-3 py-2 rounded-lg bg-secondary border border-border" /></div>
+        </div>
+      </div>
 
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>File Versioning</Label>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Keep previous versions of files
-              </p>
-            </div>
-            <Switch defaultChecked />
-          </div>
-        </CardContent>
-      </Card>
+      <div className="bg-card rounded-xl border border-border p-5">
+        <h3 className="text-sm font-semibold mb-1">Security & Access</h3>
+        <p className="text-xs text-muted-foreground mb-4">Authentication and access control settings</p>
+        <ToggleRow id="twoFactor" label="Two-factor authentication" desc="Ask users to enable 2FA (you must enable it on your account first)" />
+        <ToggleRow id="selfRegistration" label="Allow user self-registration" desc="When off, people can only join through an invite link — the organization slug alone will be rejected" />
+        <ToggleRow id="auditLog" label="Audit logging" desc="Log all user actions for compliance" />
+        <ToggleRow id="apiAccess" label="API access" desc="Allow API key generation" />
+      </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5" />
-            <CardTitle>Security Settings</CardTitle>
-          </div>
-          <CardDescription>
-            Configure security and access control policies
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Two-Factor Authentication</Label>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Require 2FA for all users
-              </p>
-            </div>
-            <Switch defaultChecked />
-          </div>
+      <div className="bg-card rounded-xl border border-border p-5">
+        <h3 className="text-sm font-semibold mb-1">Notifications & Backup</h3>
+        <p className="text-xs text-muted-foreground mb-4">Automated tasks and alerts</p>
+        <ToggleRow id="autoBackup" label="Automatic backups" desc="Daily backups at 2:00 AM UTC" />
+        <ToggleRow id="emailNotifs" label="Email notifications" desc="Send digest emails to admins" />
+      </div>
 
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Password Expiration</Label>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Force password change every 90 days
-              </p>
-            </div>
-            <Switch />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>IP Allowlisting</Label>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Restrict access to specific IP addresses
-              </p>
-            </div>
-            <Switch />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Encryption at Rest</Label>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Encrypt all stored files
-              </p>
-            </div>
-            <Switch defaultChecked />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Bell className="w-5 h-5" />
-            <CardTitle>Notification Settings</CardTitle>
-          </div>
-          <CardDescription>
-            Configure system-wide notification preferences
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Email Notifications</Label>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Send email alerts for important events
-              </p>
-            </div>
-            <Switch defaultChecked />
-          </div>
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Storage Alerts</Label>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Notify admins when storage exceeds 80%
-              </p>
-            </div>
-            <Switch defaultChecked />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Security Alerts</Label>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Alert on suspicious activity
-              </p>
-            </div>
-            <Switch defaultChecked />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Globe className="w-5 h-5" />
-            <CardTitle>General Settings</CardTitle>
-          </div>
-          <CardDescription>
-            Configure general system preferences
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Public File Sharing</Label>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Allow users to create public share links
-              </p>
-            </div>
-            <Switch defaultChecked />
-          </div>
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>User Registration</Label>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Allow new user self-registration
-              </p>
-            </div>
-            <Switch />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Activity Logging</Label>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Track all user activities
-              </p>
-            </div>
-            <Switch defaultChecked />
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex justify-end gap-3">
-        <Button variant="outline">Reset to Defaults</Button>
-        <Button onClick={handleSave}>Save Changes</Button>
+      <div className="bg-card rounded-xl border border-border p-5">
+        <h3 className="text-sm font-semibold mb-1 text-red-500">Danger Zone</h3>
+        <p className="text-xs text-muted-foreground mb-4">Irreversible and destructive actions</p>
+        <ToggleRow id="maintenanceMode" label="Maintenance mode" desc="Lock all user access except admins" />
+        <div className="flex gap-2 mt-4 pt-4 border-t border-border">
+          <button onClick={clearOrganizationData} className="text-sm px-4 py-2 rounded-lg border border-red-500/50 text-red-500 hover:bg-red-500/10 transition-colors">
+            Clear all data
+          </button>
+          <button onClick={saveGeneral} className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors ml-auto">
+            Save changes
+          </button>
+        </div>
       </div>
     </div>
   );

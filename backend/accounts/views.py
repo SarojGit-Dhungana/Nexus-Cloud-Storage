@@ -36,6 +36,7 @@ from .serializers import (
     UserSerializer,
     WorkspaceCreateSerializer,
     WorkspaceSerializer,
+    portal_for_role,
 )
 
 
@@ -47,6 +48,24 @@ def _qr_data_uri(payload):
     return f"data:image/png;base64,{encoded}"
 
 
+def _reject_wrong_portal(request, user):
+    portal = (request.data.get("portal") or "").strip().lower()
+    if not portal:
+        return None
+    expected = portal_for_role(user.role)
+    if portal != expected:
+        return Response(
+            {
+                "detail": (
+                    f"This {user.role} account belongs on the {expected} portal. "
+                    f"Open /{expected} instead."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
+
+
 class RegisterView(APIView):
     permission_classes = [AllowAny]
 
@@ -54,6 +73,10 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        denied = _reject_wrong_portal(request, user)
+        if denied:
+            user.delete()
+            return denied
         refresh = RefreshToken.for_user(user)
         return Response(
             {
@@ -424,6 +447,10 @@ class InvitationAcceptView(APIView):
         serializer = InvitationAcceptSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        denied = _reject_wrong_portal(request, user)
+        if denied:
+            user.delete()
+            return denied
         refresh = RefreshToken.for_user(user)
         return Response(
             {

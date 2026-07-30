@@ -187,9 +187,9 @@ class StorageApiTests(APITestCase):
         created = self.client.post(
             "/api/auth/system/workspaces/",
             {
-                "name": "Acme Corp",
-                "admin_name": "Acme Admin",
-                "admin_email": "owner@acme.test",
+                "name": "NexusStorage Workspace",
+                "admin_name": "Nexus Admin",
+                "admin_email": "owner@nexusstorage.test",
                 "admin_password": "Strong-Test-Password!9",
             },
             format="json",
@@ -208,7 +208,7 @@ class StorageApiTests(APITestCase):
         self.assertFalse(suspended.data["is_active"])
 
         # A member of a suspended workspace loses API access.
-        new_admin = User.objects.get(email="owner@acme.test")
+        new_admin = User.objects.get(email="owner@nexusstorage.test")
         self.authenticate(new_admin)
         self.assertEqual(self.client.get("/api/files/").status_code, status.HTTP_403_FORBIDDEN)
 

@@ -125,7 +125,7 @@ export function FileTable({ files, onShare, onDelete, onRename, onDownload, onTo
                         <div className={cn(
                           "w-8 h-8 rounded flex items-center justify-center",
                           file.type === 'folder'
-                            ? "bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400"
+                            ? "bg-primary/10 text-primary"
                             : "bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400"
                         )}>
                           <Icon className="w-4 h-4" />

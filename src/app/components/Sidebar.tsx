@@ -1,107 +1,169 @@
-import {
-  LayoutDashboard,
-  Files,
-  Share2,
-  Trash2,
-  Settings,
-  Cloud,
-  Users,
-  BarChart3
-} from 'lucide-react';
-import { cn } from './ui/utils';
-import type { SidebarView } from '../types';
-import { useAuth } from '../contexts/AuthContext';
-import { Badge } from './ui/badge';
+import { BarChart3, Building2, Cloud, Crown, Files, HardDrive, LayoutDashboard, Settings, Share2, Trash2, Upload, Users } from "lucide-react";
+import { portalHome } from "../api";
+import { StorageMeter } from "../form-modals";
+import { useUploadGuard } from "../hooks/useUploadGuard";
+import { BRAND } from "../lib/brand";
+import { cn, formatBytes } from "../lib/format";
+import type { UserProfile, View } from "../types/app-types";
+import { AppAvatar } from "./AppAvatar";
 
-interface SidebarProps {
-  currentView: SidebarView;
-  onViewChange: (view: SidebarView, subView?: string) => void;
-}
-
-const userNavigation = [
-  { id: 'dashboard' as SidebarView, label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'files' as SidebarView, label: 'My Files', icon: Files },
-  { id: 'shared' as SidebarView, label: 'Shared', icon: Share2 },
-  { id: 'trash' as SidebarView, label: 'Trash', icon: Trash2 },
+const NAV_USER = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "files", label: "My Files", icon: Files },
+  { id: "shared", label: "Shared", icon: Share2 },
+  { id: "trash", label: "Trash", icon: Trash2 },
+];
+const NAV_ADMIN = [
+  { id: "admin", label: "Analytics", icon: BarChart3 },
+  { id: "users", label: "Users", icon: Users },
+  { id: "settings", label: "Settings", icon: Settings },
+];
+const NAV_SUPER_ADMIN = [
+  { id: "workspaces", label: "Workspaces", icon: Building2 },
+  { id: "administrators", label: "Administrators", icon: Crown },
 ];
 
-const adminNavigation = [
-  { id: 'dashboard' as SidebarView, label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'files' as SidebarView, label: 'My Files', icon: Files },
-  { id: 'shared' as SidebarView, label: 'Shared', icon: Share2 },
-  { id: 'trash' as SidebarView, label: 'Trash', icon: Trash2 },
-  { id: 'admin' as SidebarView, label: 'Analytics', icon: BarChart3, adminOnly: true, subView: 'analytics' },
-  { id: 'admin' as SidebarView, label: 'User Management', icon: Users, adminOnly: true, subView: 'users' },
-  { id: 'admin' as SidebarView, label: 'Settings', icon: Settings, adminOnly: true, subView: 'settings' },
-];
+export function Sidebar({
+  user, view, onNav, collapsed,
+}: {
+  user: UserProfile; view: View; onNav: (v: View) => void; collapsed: boolean;
+}) {
+  const isSuperAdmin = user.role === "superadmin";
+  const { upload, storageFull } = useUploadGuard();
+  const uploadFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    await upload(Array.from(files));
+  };
 
-export function Sidebar({ currentView, onViewChange }: SidebarProps) {
-  const { user } = useAuth();
-  const navigation = user?.role === 'admin' ? adminNavigation : userNavigation;
   return (
-    <div className="w-60 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 flex flex-col">
-      <div className="p-6 border-b border-gray-200 dark:border-gray-800">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
-              <Cloud className="w-5 h-5 text-white" />
-            </div>
-            <span className="font-semibold text-lg">NexusStorage</span>
-          </div>
-          {user?.role === 'admin' && (
-            <Badge variant="secondary" className="bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
-              Admin
-            </Badge>
-          )}
+    <aside className={cn(
+      "h-screen flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300 flex-shrink-0",
+      collapsed ? "w-16" : "w-60"
+    )}>
+      {/* Logo */}
+      <div className="h-14 flex items-center px-4 border-b border-sidebar-border flex-shrink-0">
+        <div className="w-7 h-7 rounded-md nexus-mark flex items-center justify-center flex-shrink-0">
+          <Cloud className="w-3.5 h-3.5 text-white" />
         </div>
+        {!collapsed && <span className="ml-2.5 font-brand text-[1.15rem] leading-none">NexusStorage</span>}
       </div>
 
-      <nav className="flex-1 p-3 space-y-1">
-        {navigation.map((item, index) => {
-          const Icon = item.icon;
-          const isActive = currentView === item.id;
-          const isAdminSection = 'adminOnly' in item && item.adminOnly;
+      <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-0.5">
+        {/* Upload button — super admins own no workspace storage */}
+        {!isSuperAdmin && (!collapsed ? (
+          <label
+            className={cn(
+              "w-full flex items-center gap-2.5 px-3 py-2 mb-3 rounded-lg text-sm font-medium transition-colors",
+              storageFull
+                ? "bg-destructive/15 text-destructive cursor-pointer"
+                : "bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer",
+            )}
+            onClick={event => {
+              if (!storageFull) return;
+              event.preventDefault();
+              void upload([]);
+            }}
+          >
+            <Upload className="w-4 h-4" />
+            {storageFull ? "Storage full" : "New Upload"}
+            <input type="file" multiple className="hidden" disabled={storageFull} onChange={event => uploadFiles(event.target.files)} />
+          </label>
+        ) : (
+          <label
+            className={cn(
+              "w-full flex items-center justify-center p-2 mb-3 rounded-lg transition-colors",
+              storageFull
+                ? "bg-destructive/15 text-destructive cursor-pointer"
+                : "bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer",
+            )}
+            onClick={event => {
+              if (!storageFull) return;
+              event.preventDefault();
+              void upload([]);
+            }}
+          >
+            <Upload className="w-4 h-4" />
+            <input type="file" multiple className="hidden" disabled={storageFull} onChange={event => uploadFiles(event.target.files)} />
+          </label>
+        ))}
 
-          return (
-            <div key={`${item.id}-${index}`}>
-              {index === 4 && user?.role === 'admin' && (
-                <div className="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Administration
-                </div>
-              )}
+        {isSuperAdmin ? (
+          <>
+            <div className={cn("text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1", collapsed ? "px-1 text-center text-[9px]" : "px-3")}>
+              {collapsed ? "•••" : "System"}
+            </div>
+            {NAV_SUPER_ADMIN.map(({ id, label, icon: Icon }) => (
               <button
-                onClick={() => onViewChange(item.id, 'subView' in item ? item.subView : undefined)}
+                key={id}
+                onClick={() => onNav(id as View)}
                 className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
-                  isActive
-                    ? isAdminSection
-                      ? "bg-purple-100 dark:bg-purple-950 text-purple-900 dark:text-purple-100"
-                      : "bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-white"
-                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50 hover:text-gray-900 dark:hover:text-white"
+                  "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors",
+                  collapsed && "justify-center",
+                  view === id
+                    ? "bg-sidebar-accent text-sidebar-primary font-medium"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                 )}
               >
-                <Icon className="w-4 h-4" />
-                {item.label}
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && label}
               </button>
+            ))}
+          </>
+        ) : (
+          <>
+            <div className={cn("text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1", collapsed ? "px-1 text-center text-[9px]" : "px-3")}>
+              {collapsed ? "•••" : "Storage"}
             </div>
-          );
-        })}
+            {NAV_USER.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => onNav(id as View)}
+                className={cn(
+                  "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors",
+                  collapsed && "justify-center",
+                  view === id
+                    ? "bg-sidebar-accent text-sidebar-primary font-medium"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                )}
+              >
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && label}
+              </button>
+            ))}
+          </>
+        )}
+
+        {user.role === "admin" && (
+          <>
+            <div className={cn("text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-4 mb-1", collapsed ? "px-1 text-center text-[9px]" : "px-3")}>
+              {collapsed ? "•••" : "Admin"}
+            </div>
+            {NAV_ADMIN.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => onNav(id as View)}
+                className={cn(
+                  "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors",
+                  collapsed && "justify-center",
+                  view === id
+                    ? "bg-sidebar-accent text-sidebar-primary font-medium"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                )}
+              >
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && label}
+              </button>
+            ))}
+          </>
+        )}
       </nav>
 
-      <div className="p-4 border-t border-gray-200 dark:border-gray-800">
-        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 space-y-2">
-          <div className="flex justify-between text-xs">
-            <span className="text-gray-600 dark:text-gray-400">Storage</span>
-            <span className="font-medium">44 GB / 100 GB</span>
-          </div>
-          <div className="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-2 overflow-hidden">
-            <div className="bg-blue-500 h-full rounded-full" style={{ width: '44%' }} />
-          </div>
-          <button className="w-full text-xs text-blue-600 dark:text-blue-400 hover:underline">
-            Upgrade storage
-          </button>
+      {/* Storage meter */}
+      {!collapsed && !isSuperAdmin && (
+        <div className="p-4 border-t border-sidebar-border">
+          <StorageMeter usedGb={user.storage.used} totalGb={user.storage.total} compact />
         </div>
-      </div>
-    </div>
+      )}
+    </aside>
   );
 }

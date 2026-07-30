@@ -13,6 +13,14 @@ NexusStorage is a multi-tenant cloud storage SaaS application. It includes the o
 - AI: account-metadata-grounded assistant using local Ollama, Groq, or a deterministic no-key fallback
 - SaaS isolation: every user and file belongs to an organization; API querysets enforce tenant boundaries
 
+## Documentation
+
+- [System usage](docs/SYSTEM_USAGE.md) — portals, how to run, and main product flows
+- [Backend & frontend structure](docs/ARCHITECTURE.md) — class inventory, API clients, and UI modules
+- [Class vs object](docs/CLASS_VS_OBJECT.md) — OOP primer with NexusStorage examples
+- [Remaining work plan](docs/REMAINING_WORK_PLAN.md) — fixes, features, algorithms, testing, free cloud storage (R2/S3)
+- **Report chapters:** [Chapter 3 — Analysis & Design](docs/report/CHAPTER_3_SYSTEM_ANALYSIS_AND_DESIGN.md) · [Chapter 4 — Implementation & Testing](docs/report/CHAPTER_4_IMPLEMENTATION_AND_TESTING.md)
+
 ## 1. Configure
 
 Copy `.env.example` to `.env`, then replace `DJANGO_SECRET_KEY` and database credentials.

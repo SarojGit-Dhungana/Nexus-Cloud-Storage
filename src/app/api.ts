@@ -253,18 +253,27 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}, retry 
   return response.json();
 }
 
+export class PortalMismatchError extends Error {
+  constructor(public expectedPortal: Portal, message: string) {
+    super(message);
+  }
+}
+
 async function authenticateAndRoute(
   data: { access: string; refresh: string; user: ApiUser },
   expectedPortal?: Portal,
 ) {
   const destination = portalForRole(data.user.role);
-  // Always park the session under the role's own portal so /user and /admin never share tokens.
-  saveTokens(data.access, data.refresh, destination);
   if (expectedPortal && expectedPortal !== destination) {
+    // Never open the wrong portal or park tokens under a mismatched route.
     clearTokens(expectedPortal);
-    window.location.assign(`${portalHome(destination)}${window.location.search || ""}`);
-    return data.user;
+    clearTokens(destination);
+    throw new PortalMismatchError(
+      destination,
+      `This ${data.user.role} account can only sign in on the ${portalLabel(destination)} portal (/${destination}).`,
+    );
   }
+  saveTokens(data.access, data.refresh, destination);
   if (portalFromPath() !== destination) {
     window.location.assign(`${portalHome(destination)}${window.location.search || ""}`);
   }
@@ -273,11 +282,12 @@ async function authenticateAndRoute(
 
 export const authApi = {
   async login(email: string, password: string, otp = "") {
+    const portal = portalFromPath();
     const data = await apiRequest<{ access: string; refresh: string; user: ApiUser }>(
       "/auth/login/",
-      { method: "POST", body: JSON.stringify({ email, password, otp }) },
+      { method: "POST", body: JSON.stringify({ email, password, otp, portal }) },
     );
-    return authenticateAndRoute(data, portalFromPath());
+    return authenticateAndRoute(data, portal);
   },
   async register(payload: {
     name: string;
@@ -287,18 +297,20 @@ export const authApi = {
     organization_name?: string;
     organization_slug?: string;
   }) {
+    const portal = portalFromPath();
     const data = await apiRequest<{ access: string; refresh: string; user: ApiUser }>(
       "/auth/register/",
-      { method: "POST", body: JSON.stringify(payload) },
+      { method: "POST", body: JSON.stringify({ ...payload, portal }) },
     );
-    return authenticateAndRoute(data, portalFromPath());
+    return authenticateAndRoute(data, portal);
   },
   async acceptInvitation(token: string, name: string, password: string) {
+    const portal = portalFromPath();
     const data = await apiRequest<{ access: string; refresh: string; user: ApiUser }>(
       "/auth/invitations/accept/",
-      { method: "POST", body: JSON.stringify({ token, name, password }) },
+      { method: "POST", body: JSON.stringify({ token, name, password, portal }) },
     );
-    return authenticateAndRoute(data, portalFromPath());
+    return authenticateAndRoute(data, portal);
   },
   me: () => apiRequest<ApiUser>("/auth/me/"),
   updateProfile: (changes: { name?: string; avatar_url?: string }) =>
@@ -500,13 +512,69 @@ export const chatApi = {
   create: () =>
     apiRequest<Conversation>("/assistant/conversations/", {
       method: "POST",
-      body: JSON.stringify({ title: "New conversation" }),
+      body: JSON.stringify({ title: "AI Chat" }),
     }),
   send: (conversationId: string, message: string) =>
     apiRequest<{ user_message: ChatMessage; assistant_message: ChatMessage }>(
       `/assistant/conversations/${conversationId}/send/`,
       { method: "POST", body: JSON.stringify({ message }) },
     ),
+  clear: (conversationId: string) =>
+    apiRequest<Conversation>(`/assistant/conversations/${conversationId}/clear/`, { method: "POST" }),
+  remove: (conversationId: string) =>
+    apiRequest<void>(`/assistant/conversations/${conversationId}/`, { method: "DELETE" }),
+};
+
+export interface ChatContact {
+  id: string;
+  name: string;
+  email: string;
+  avatar_url?: string;
+  role?: string;
+  is_friend?: boolean;
+}
+
+export interface DirectChatMessage {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  sender_name: string;
+  receiver_name: string;
+  body: string;
+  seen: boolean;
+  time: string;
+}
+
+/** Friend-to-friend messaging adapted from Django-ChatApp. */
+export const messagingApi = {
+  friends: () => apiRequest<ChatContact[]>("/messaging/friends/"),
+  search: (q = "") =>
+    apiRequest<ChatContact[]>(`/messaging/users/${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  addFriend: (userId: string) =>
+    apiRequest<ChatContact>("/messaging/friends/add/", {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId }),
+    }),
+  removeFriend: (userId: string) =>
+    apiRequest<void>(`/messaging/friends/${userId}/`, { method: "DELETE" }),
+  /** Alias: delete chat for me only (other user keeps their history). */
+  deleteChat: (userId: string) =>
+    apiRequest<void>(`/messaging/friends/${userId}/`, { method: "DELETE" }),
+  history: (peerId: string) =>
+    apiRequest<DirectChatMessage[]>(`/messaging/messages/?with=${encodeURIComponent(peerId)}`),
+  unread: (peerId: string) =>
+    apiRequest<DirectChatMessage[]>(
+      `/messaging/messages/?with=${encodeURIComponent(peerId)}&unread=1`,
+    ),
+  send: (receiverId: string, body: string) =>
+    apiRequest<DirectChatMessage>("/messaging/messages/", {
+      method: "POST",
+      body: JSON.stringify({ receiver_id: receiverId, body }),
+    }),
+  clear: (peerId: string) =>
+    apiRequest<{ cleared: number }>(`/messaging/messages/?with=${encodeURIComponent(peerId)}`, {
+      method: "DELETE",
+    }),
 };
 
 export async function authenticatedDownload(id: string, filename: string) {
