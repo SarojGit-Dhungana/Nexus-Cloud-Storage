@@ -1,4 +1,5 @@
 import { Shield, User, Cloud } from 'lucide-react';
+import { PRODUCT_NAME } from '../lib/brand';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 
@@ -16,7 +17,7 @@ export function RoleSelector({ onSelectRole }: RoleSelectorProps) {
             <div className="w-12 h-12 nexus-mark rounded-xl flex items-center justify-center">
               <Cloud className="w-7 h-7 text-white" />
             </div>
-            <h1 className="font-brand text-3xl">NexusStorage</h1>
+            <h1 className="font-brand text-2xl sm:text-3xl leading-tight">{PRODUCT_NAME}</h1>
           </div>
           <p className="font-script text-primary mb-2">Access control</p>
           <p className="text-muted-foreground">
@@ -95,7 +96,7 @@ export function RoleSelector({ onSelectRole }: RoleSelectorProps) {
         </div>
 
         <p className="text-center text-sm text-muted-foreground mt-8 uppercase tracking-[0.12em]">
-          NexusStorage · Role is set by your signed-in account
+          {PRODUCT_NAME} · Role is set by your signed-in account
         </p>
       </div>
     </div>

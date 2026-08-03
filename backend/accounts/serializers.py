@@ -1,13 +1,15 @@
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from django.db.models import Sum
-from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from .models import Invitation, Organization, User
+from .models import Organization, User
 from .security import decrypt_secret
 from .totp import verify_code
+
+# Personal quota for regular members (admins inherit the workspace total).
+DEFAULT_MEMBER_STORAGE_BYTES = 50 * 1024**3
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
@@ -119,7 +121,7 @@ class RegisterSerializer(serializers.Serializer):
                     {
                         "organization_slug": (
                             "Self-registration is turned off for this organization. "
-                            "Ask an admin for an invite link."
+                            "Ask an admin to add your account."
                         )
                     }
                 )
@@ -144,7 +146,7 @@ class RegisterSerializer(serializers.Serializer):
                     {
                         "organization_slug": (
                             "Self-registration is turned off for this organization. "
-                            "Ask an admin for an invite link."
+                            "Ask an admin to add your account."
                         )
                     }
                 )
@@ -152,12 +154,16 @@ class RegisterSerializer(serializers.Serializer):
         else:
             organization = Organization.objects.create(name=organization_name.strip())
             role = User.Role.ADMIN
+        storage_quota = None
+        if role == User.Role.USER:
+            storage_quota = min(DEFAULT_MEMBER_STORAGE_BYTES, organization.storage_quota_bytes)
         return User.objects.create_user(
             organization=organization,
             role=role,
             display_name=validated_data["name"],
             email=validated_data["email"],
             password=validated_data["password"],
+            storage_quota_bytes=storage_quota,
         )
 
 
@@ -256,12 +262,18 @@ class OrganizationUserCreateSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         organization = self.context["request"].user.organization
+        role = validated_data["role"]
+        # Members get 50 GB by default (capped by workspace total); admins inherit org quota.
+        storage_quota = None
+        if role == User.Role.USER:
+            storage_quota = min(DEFAULT_MEMBER_STORAGE_BYTES, organization.storage_quota_bytes)
         return User.objects.create_user(
             email=validated_data["email"],
             password=validated_data["password"],
             display_name=validated_data["name"],
             organization=organization,
-            role=validated_data["role"],
+            role=role,
+            storage_quota_bytes=storage_quota,
         )
 
 
@@ -285,59 +297,6 @@ class PasswordChangeSerializer(serializers.Serializer):
     def validate_new_password(self, value):
         validate_password(value, self.context["request"].user)
         return value
-
-
-class InvitationCreateSerializer(serializers.Serializer):
-    email = serializers.EmailField()
-    role = serializers.ChoiceField(
-        choices=(User.Role.ADMIN, User.Role.USER), default=User.Role.USER
-    )
-
-    def validate_email(self, value):
-        value = value.lower().strip()
-        organization = self.context["request"].user.organization
-        if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("A user with this email already has an account.")
-        return value
-
-
-class InvitationAcceptSerializer(serializers.Serializer):
-    token = serializers.CharField()
-    name = serializers.CharField(max_length=160)
-    password = serializers.CharField(write_only=True, min_length=8)
-
-    def validate_password(self, value):
-        validate_password(value)
-        return value
-
-    def validate(self, attrs):
-        invitation = Invitation.objects.filter(
-            token_hash=Invitation.hash_token(attrs["token"]),
-            accepted_at__isnull=True,
-            expires_at__gt=timezone.now(),
-        ).select_related("organization").first()
-        if not invitation:
-            raise serializers.ValidationError({"token": "Invitation is invalid or expired."})
-        if User.objects.filter(email=invitation.email).exists():
-            raise serializers.ValidationError({"token": "An account already exists for this invitation."})
-        attrs["invitation"] = invitation
-        return attrs
-
-    @transaction.atomic
-    def create(self, validated_data):
-        invitation = Invitation.objects.select_for_update().get(pk=validated_data["invitation"].pk)
-        if invitation.accepted_at:
-            raise serializers.ValidationError({"token": "Invitation has already been used."})
-        user = User.objects.create_user(
-            email=invitation.email,
-            password=validated_data["password"],
-            display_name=validated_data["name"],
-            organization=invitation.organization,
-            role=invitation.role,
-        )
-        invitation.accepted_at = timezone.now()
-        invitation.save(update_fields=("accepted_at",))
-        return user
 
 
 # ─── Super admin (system level) ──────────────────────────────────────────────

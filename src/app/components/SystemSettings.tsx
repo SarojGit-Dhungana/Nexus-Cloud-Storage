@@ -47,7 +47,7 @@ export function SystemSettings() {
         key === "selfRegistration"
           ? (nextValue
             ? "Users can join with your organization slug"
-            : "Self-registration is off — only invite links work")
+            : "Self-registration is off — only admins can add users")
           : `${label} ${nextValue ? "enabled" : "disabled"}`,
       );
     } catch (error) {
@@ -69,7 +69,7 @@ export function SystemSettings() {
   const addUser = async () => {
     const values = await promptForm({
       title: "Add workspace user",
-      description: "Create an account in your workspace. Share the temporary password securely.",
+      description: "Create an account in your workspace. Regular members get 50 GB by default; administrators use the workspace allocation. Share the temporary password securely.",
       fields: [
         { name: "name", label: "Full name", autoFocus: true, placeholder: "Jane Doe" },
         { name: "email", label: "Email address", type: "email", placeholder: "jane@company.com" },
@@ -90,30 +90,6 @@ export function SystemSettings() {
       toast.success(`${created.name} added to your workspace`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not add user");
-    }
-  };
-  const inviteUser = async () => {
-    const values = await promptForm({
-      title: "Invite user",
-      description: "Send an invitation link (valid for 7 days). The link is copied to your clipboard.",
-      fields: [
-        { name: "email", label: "Email address", type: "email", autoFocus: true, placeholder: "you@nexusstorage.local" },
-        { name: "role", label: "Role", type: "select", options: ROLE_OPTIONS, defaultValue: "user" },
-      ],
-      confirmLabel: "Create invite",
-    });
-    const email = values?.email?.trim();
-    if (!email) return;
-    try {
-      const invitation = await adminApi.invite(email, values.role === "admin" ? "admin" : "user");
-      await navigator.clipboard.writeText(invitation.invite_url);
-      toast.success(
-        invitation.email_sent
-          ? `Invitation emailed to ${email} (link also copied)`
-          : "Invitation link copied (valid for 7 days)",
-      );
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Invitation failed");
     }
   };
   const clearOrganizationData = async () => {
@@ -162,7 +138,7 @@ export function SystemSettings() {
       {formModal}
       <div>
         <h2 className="font-semibold">System Settings</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Configure your NexusStorage instance</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Configure your Cloud Based Storage System instance</p>
       </div>
 
       <div className="bg-card rounded-xl border border-border p-5">
@@ -170,7 +146,7 @@ export function SystemSettings() {
           <div>
             <h3 className="text-sm font-semibold mb-1">Workspace members</h3>
             <p className="text-xs text-muted-foreground">
-              Add people to your workspace or send an invite link. {users.length} member{users.length === 1 ? "" : "s"} currently.
+              Add people to your workspace. Regular members get 50 GB by default. {users.length} member{users.length === 1 ? "" : "s"} currently.
             </p>
           </div>
           <Users className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
@@ -182,13 +158,6 @@ export function SystemSettings() {
             className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
           >
             <UserPlus className="w-3.5 h-3.5" /> Add user
-          </button>
-          <button
-            type="button"
-            onClick={inviteUser}
-            className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-border hover:bg-secondary transition-colors"
-          >
-            <UserPlus className="w-3.5 h-3.5" /> Invite by email
           </button>
         </div>
       </div>
@@ -232,7 +201,7 @@ export function SystemSettings() {
         <h3 className="text-sm font-semibold mb-1">Security & Access</h3>
         <p className="text-xs text-muted-foreground mb-4">Authentication and access control settings</p>
         <ToggleRow id="twoFactor" label="Two-factor authentication" desc="Ask users to enable 2FA (you must enable it on your account first)" />
-        <ToggleRow id="selfRegistration" label="Allow user self-registration" desc="When off, people can only join through an invite link — the organization slug alone will be rejected" />
+        <ToggleRow id="selfRegistration" label="Allow user self-registration" desc="When off, only workspace admins can add users — the organization slug alone will be rejected" />
         <ToggleRow id="auditLog" label="Audit logging" desc="Log all user actions for compliance" />
         <ToggleRow id="apiAccess" label="API access" desc="Allow API key generation" />
       </div>

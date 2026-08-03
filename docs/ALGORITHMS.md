@@ -1,4 +1,4 @@
-# NexusStorage — Algorithms & Responsibilities
+# Cloud Based Storage System — Algorithms & Responsibilities
 
 This document lists the main algorithms used in the system and what each one is responsible for.
 

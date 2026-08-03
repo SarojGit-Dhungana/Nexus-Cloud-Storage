@@ -59,11 +59,16 @@ def verify_code(secret, code, drift_steps=0, now=None):
     return False
 
 
-def provisioning_uri(secret, email, issuer_name="NexusStorage"):
+def provisioning_uri(secret, email, issuer_name=None):
     """Build a Google Authenticator–compatible otpauth URI with a safe issuer."""
+    from django.conf import settings
+
+    default_issuer = getattr(settings, "PRODUCT_NAME", "Cloud Based Storage System")
     safe_issuer = "".join(
-        character for character in str(issuer_name or "NexusStorage") if character.isalnum() or character in ("-", "_", " ")
-    ).strip() or "NexusStorage"
+        character
+        for character in str(issuer_name or default_issuer)
+        if character.isalnum() or character in ("-", "_", " ")
+    ).strip() or default_issuer
     # Colons/slashes in the issuer break many authenticator apps' QR parsers.
     safe_issuer = safe_issuer.replace(":", " ").replace("/", " ")[:32]
     return _totp(secret).provisioning_uri(name=email, issuer_name=safe_issuer)

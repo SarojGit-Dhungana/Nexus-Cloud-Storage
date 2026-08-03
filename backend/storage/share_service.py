@@ -60,10 +60,11 @@ class ShareService:
             )
             # Simple inbox link for the person who received the share
             app_url = f"{settings.FRONTEND_URL}/user/?shared=inbox"
+            product = getattr(settings, "PRODUCT_NAME", "Cloud Based Storage System")
             emailed = send_notification(
                 subject=f"{self.user.display_name} shared '{node.name}' with you",
                 body=(
-                    f"{self.user.display_name} shared '{node.name}' with you on NexusStorage "
+                    f"{self.user.display_name} shared '{node.name}' with you on {product} "
                     f"with {grant.permission} access.\n\n"
                     f"Sign in and open Shared → Pending requests to accept or ignore:\n{app_url}\n\n"
                     "After you accept, you can preview and download the file."
@@ -97,12 +98,13 @@ class ShareService:
             public_url = self.request.build_absolute_uri(f"/api/public/shares/{raw_token}/")
             emailed = False
             if notify_email:
+                product = getattr(settings, "PRODUCT_NAME", "Cloud Based Storage System")
                 emailed = bool(
                     send_notification(
                         subject=f"{self.user.display_name} shared '{node.name}' with you",
                         body=(
                             f"{self.user.display_name} shared '{node.name}' with you via a secure "
-                            f"NexusStorage link ({link.permission} access).\n\n"
+                            f"{product} link ({link.permission} access).\n\n"
                             f"Open the link:\n{public_url}\n\n"
                             + (
                                 "This link is password protected; ask the sender for the password.\n"

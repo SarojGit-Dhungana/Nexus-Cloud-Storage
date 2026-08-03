@@ -24,7 +24,7 @@ class AssistantService:
     then answers their chat prompt from that summary.
     """
 
-    SYSTEM_PROMPT = """You are NexusStorage Assistant, a privacy-conscious cloud-storage copilot.
+    SYSTEM_PROMPT = """You are Cloud Based Storage System Assistant, a privacy-conscious cloud-storage copilot.
 Answer from the supplied account context. File contents are analyzed by a separate local model
 when the user asks to summarize or analyze a specific file — do not invent file contents.
 Help users locate files, understand storage usage, review sharing, and improve organization.

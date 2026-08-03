@@ -2,7 +2,7 @@ import { BarChart3, Building2, Cloud, Crown, Files, HardDrive, LayoutDashboard, 
 import { portalHome } from "../api";
 import { StorageMeter } from "../form-modals";
 import { useUploadGuard } from "../hooks/useUploadGuard";
-import { BRAND } from "../lib/brand";
+import { BRAND, PRODUCT_NAME_SHORT } from "../lib/brand";
 import { cn, formatBytes } from "../lib/format";
 import type { UserProfile, View } from "../types/app-types";
 import { AppAvatar } from "./AppAvatar";
@@ -45,7 +45,7 @@ export function Sidebar({
         <div className="w-7 h-7 rounded-md nexus-mark flex items-center justify-center flex-shrink-0">
           <Cloud className="w-3.5 h-3.5 text-white" />
         </div>
-        {!collapsed && <span className="ml-2.5 font-brand text-[1.15rem] leading-none">NexusStorage</span>}
+        {!collapsed && <span className="ml-2.5 font-brand text-[0.95rem] leading-tight">{PRODUCT_NAME_SHORT}</span>}
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-0.5">

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { HardDrive, MoreHorizontal, Search, Trash2, UserPlus, Users } from "lucide-react";
+import { HardDrive, MoreHorizontal, Search, Trash2, Users } from "lucide-react";
 import { adminApi, ApiUser } from "../api";
 import { useConfirm, useFormPrompt } from "../form-modals";
 import { AVATAR_COLORS } from "../lib/brand";
@@ -50,14 +50,17 @@ export function UserManagement({ currentUserId }: { currentUserId: string }) {
     const orgQuotaGb = (settings?.storage_quota_bytes ?? 0) / 1024 ** 3;
     const usedGb = user.storage_used / 1024 ** 3;
     const currentGb = user.storage_total / 1024 ** 3;
+    const isSelf = user.id === currentUserId;
     const values = await promptForm({
-      title: `Allocate storage — ${user.name}`,
-      description: `Personal quota within your workspace (${orgQuotaGb.toFixed(1)} GB total). Currently using ${formatByteCount(user.storage_used)}. Must be between ${Math.max(0.01, usedGb).toFixed(2)} GB and ${orgQuotaGb.toFixed(1)} GB.`,
+      title: isSelf ? "Allocate your storage" : `Allocate storage — ${user.name}`,
+      description: isSelf
+        ? `Set your personal quota within the workspace (${orgQuotaGb.toFixed(1)} GB total). Currently using ${formatByteCount(user.storage_used)}. Must be between ${Math.max(0.01, usedGb).toFixed(2)} GB and ${orgQuotaGb.toFixed(1)} GB.`
+        : `Personal quota within your workspace (${orgQuotaGb.toFixed(1)} GB total). Currently using ${formatByteCount(user.storage_used)}. Must be between ${Math.max(0.01, usedGb).toFixed(2)} GB and ${orgQuotaGb.toFixed(1)} GB.`,
       fields: [{
         name: "storage_gb",
         label: "Personal storage allocation (GB)",
         type: "number",
-        defaultValue: String(Math.max(0.1, Math.round(currentGb * 10) / 10) || 1),
+        defaultValue: String(Math.max(0.1, Math.round(currentGb * 10) / 10) || (user.role === "user" ? 50 : 1)),
         autoFocus: true,
       }],
       confirmLabel: "Save allocation",
@@ -81,7 +84,7 @@ export function UserManagement({ currentUserId }: { currentUserId: string }) {
         storage_quota_bytes: Math.round(storageGb * 1024 ** 3),
       });
       queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
-      toast.success(`Allocated ${storageGb} GB to ${user.name}`);
+      toast.success(isSelf ? `Your storage set to ${storageGb} GB` : `Allocated ${storageGb} GB to ${user.name}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not update storage allocation");
     }
@@ -101,8 +104,8 @@ export function UserManagement({ currentUserId }: { currentUserId: string }) {
     const ok = await confirm({
       title: suspending ? `Suspend ${user.name}?` : `Activate ${user.name}?`,
       description: suspending
-        ? `Are you sure you want to suspend this user? ${user.name} will temporarily lose access to NexusStorage until you activate them again.`
-        : `${user.name} will regain access to NexusStorage and can sign in again.`,
+        ? `Are you sure you want to suspend this user? ${user.name} will temporarily lose access to Cloud Based Storage System until you activate them again.`
+        : `${user.name} will regain access to Cloud Based Storage System and can sign in again.`,
       confirmLabel: suspending ? "Yes, suspend" : "Yes, activate",
       danger: suspending,
     });
@@ -146,7 +149,7 @@ export function UserManagement({ currentUserId }: { currentUserId: string }) {
   const addUser = async () => {
     const values = await promptForm({
       title: "Add workspace user",
-      description: "Create an account in your workspace. Share the temporary password securely.",
+      description: "Create an account in your workspace. Regular members get 50 GB by default; administrators use the workspace allocation. Share the temporary password securely.",
       fields: [
         { name: "name", label: "Full name", autoFocus: true, placeholder: "Jane Doe" },
         { name: "email", label: "Email address", type: "email", placeholder: "jane@company.com" },
@@ -170,31 +173,6 @@ export function UserManagement({ currentUserId }: { currentUserId: string }) {
     }
   };
 
-  const inviteUser = async () => {
-    const values = await promptForm({
-      title: "Invite user",
-      description: "Send an invitation link (valid for 7 days). The link is copied to your clipboard.",
-      fields: [
-        { name: "email", label: "Email address", type: "email", autoFocus: true, placeholder: "you@nexusstorage.local" },
-        { name: "role", label: "Role", type: "select", options: ROLE_OPTIONS, defaultValue: "user" },
-      ],
-      confirmLabel: "Create invite",
-    });
-    const email = values?.email?.trim();
-    if (!email) return;
-    try {
-      const invitation = await adminApi.invite(email, values.role === "admin" ? "admin" : "user");
-      await navigator.clipboard.writeText(invitation.invite_url);
-      toast.success(
-        invitation.email_sent
-          ? `Invitation emailed to ${email} (link also copied)`
-          : "Invitation link copied (valid for 7 days)",
-      );
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Invitation failed");
-    }
-  };
-
   return (
     <div>
       {formModal}
@@ -202,7 +180,7 @@ export function UserManagement({ currentUserId }: { currentUserId: string }) {
       <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
         <div>
           <h2 className="font-semibold">User Management</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">{users.length} users total — use ⋮ to allocate storage, suspend, or delete members</p>
+          <p className="text-sm text-muted-foreground mt-0.5">{users.length} users total — allocate storage (including your own), or suspend/delete members</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -214,9 +192,6 @@ export function UserManagement({ currentUserId }: { currentUserId: string }) {
               className="pl-9 pr-4 py-2 text-sm rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50 w-52"
             />
           </div>
-          <button onClick={inviteUser} className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-border hover:bg-secondary transition-colors">
-            <UserPlus className="w-3.5 h-3.5" /> Invite
-          </button>
           <button onClick={addUser} className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors">
             <Users className="w-3.5 h-3.5" /> Add user
           </button>
@@ -272,7 +247,8 @@ export function UserManagement({ currentUserId }: { currentUserId: string }) {
                           onClick={() => allocateUserStorage(u)}
                           className="w-full px-3 py-2 text-left hover:bg-secondary flex items-center gap-2"
                         >
-                          <HardDrive className="w-3.5 h-3.5" /> Allocate storage
+                          <HardDrive className="w-3.5 h-3.5" />
+                          {u.id === currentUserId ? "Allocate your storage" : "Allocate storage"}
                         </button>
                         {canManageMember(u) && (
                           <>
@@ -290,11 +266,14 @@ export function UserManagement({ currentUserId }: { currentUserId: string }) {
                             </button>
                           </>
                         )}
-                        {!canManageMember(u) && (
+                        {!canManageMember(u) && u.id === currentUserId && (
                           <p className="px-3 py-2 text-muted-foreground">
-                            {u.id === currentUserId
-                              ? "You cannot suspend or delete yourself"
-                              : "Admins cannot be suspended or deleted here"}
+                            You can set your own personal quota above
+                          </p>
+                        )}
+                        {!canManageMember(u) && u.id !== currentUserId && (
+                          <p className="px-3 py-2 text-muted-foreground">
+                            Admins cannot be suspended or deleted here
                           </p>
                         )}
                       </div>

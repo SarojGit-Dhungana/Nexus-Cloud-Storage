@@ -34,7 +34,7 @@ UNSUPPORTED_TASK_RE = re.compile(
 
 class FileAnalysisService:
     """
-    NexusStorage's built-in file analyzer.
+    Cloud Based Storage System's built-in file analyzer.
 
     Answers any question about a stored file using the trained local model.
     If the task cannot be handled, returns a clear apology message.

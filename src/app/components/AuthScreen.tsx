@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Cloud, Loader2, Mail, Shield } from "lucide-react";
-import { ApiError, ApiUser, authApi, Portal, portalForRole, portalLabel, PortalMismatchError } from "../api";
-import { cn } from "../lib/format";
+import { Cloud } from "lucide-react";
+import { ApiUser, authApi, Portal, portalForRole, portalLabel, PortalMismatchError } from "../api";
+import { PRODUCT_NAME } from "../lib/brand";
 
 export function AuthScreen({
   portal,
@@ -11,7 +11,6 @@ export function AuthScreen({
   portal: Portal;
   onAuthenticated: (user: ApiUser) => void;
 }) {
-  const inviteToken = new URLSearchParams(window.location.search).get("invite");
   const [mode, setMode] = useState<"login" | "organization" | "user">(
     portal === "admin" ? "login" : portal === "user" ? "login" : "login",
   );
@@ -27,9 +26,7 @@ export function AuthScreen({
     event.preventDefault();
     setLoading(true);
     try {
-      const user = inviteToken
-        ? await authApi.acceptInvitation(inviteToken, name, password)
-        : mode === "organization"
+      const user = mode === "organization"
         ? await authApi.register({
             name,
             email,
@@ -52,12 +49,9 @@ export function AuthScreen({
         toast.error(`Use the ${portalLabel(expected)} portal for this account`);
         return;
       }
-      if (inviteToken) window.history.replaceState({}, "", window.location.pathname);
       onAuthenticated(user);
       toast.success(
-        inviteToken
-          ? "Invitation accepted"
-          : mode === "organization"
+        mode === "organization"
           ? "Workspace created"
           : mode === "user"
           ? "Account created"
@@ -74,16 +68,12 @@ export function AuthScreen({
     }
   };
 
-  const title = inviteToken
-    ? "Join your workspace"
-    : mode === "organization"
+  const title = mode === "organization"
     ? "Create your workspace"
     : mode === "user"
     ? "Create a user account"
     : `${portalLabel(portal)} sign in`;
-  const subtitle = inviteToken
-    ? "Complete your invited team account"
-    : mode === "organization"
+  const subtitle = mode === "organization"
     ? "You become the organization administrator"
     : mode === "user"
     ? "Join an existing organization as a regular user"
@@ -107,45 +97,43 @@ export function AuthScreen({
             <div className="w-9 h-9 rounded-lg nexus-mark flex items-center justify-center">
               <Cloud className="w-4.5 h-4.5 text-white" />
             </div>
-            <span className="font-brand text-[1.65rem] text-foreground">NexusStorage</span>
+            <span className="font-brand text-[1.25rem] sm:text-[1.45rem] text-foreground leading-tight">{PRODUCT_NAME}</span>
           </div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-destructive mb-3">Access control</p>
           <h1 className="font-display text-[2rem] mb-2 text-foreground">{title}</h1>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
         <form onSubmit={submit} className="rounded-xl border border-border bg-card p-6 space-y-4 shadow-lg">
-          {(mode !== "login" || inviteToken) && (
+          {mode !== "login" && (
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1.5">Your name</label>
               <input required value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2.5 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50" />
             </div>
           )}
-          {mode === "organization" && !inviteToken && (
+          {mode === "organization" && (
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1.5">Organization name</label>
               <input required value={organization} onChange={e => setOrganization(e.target.value)} className="w-full px-3 py-2.5 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50" />
             </div>
           )}
-          {mode === "user" && !inviteToken && (
+          {mode === "user" && (
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1.5">Organization slug</label>
-              <input required value={organizationSlug} onChange={e => setOrganizationSlug(e.target.value.toLowerCase().trim())} placeholder="nexusstorage" className="w-full px-3 py-2.5 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50" />
+              <input required value={organizationSlug} onChange={e => setOrganizationSlug(e.target.value.toLowerCase().trim())} placeholder="Cloud Based Storage System" className="w-full px-3 py-2.5 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50" />
               <p className="text-[11px] text-muted-foreground mt-1">
-                Use the slug from Settings. If the admin turned off self-registration, you need an invite link instead.
+                Use the slug from Settings. If the admin turned off self-registration, ask them to add your account.
               </p>
             </div>
           )}
-          {!inviteToken && (
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1.5">Email</label>
-              <input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-3 py-2.5 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50" />
-            </div>
-          )}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1.5">Email</label>
+            <input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-3 py-2.5 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50" />
+          </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground block mb-1.5">Password</label>
             <input required minLength={8} type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-3 py-2.5 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50" />
           </div>
-          {mode === "login" && !inviteToken && (
+          {mode === "login" && (
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1.5">Authenticator code <span className="font-normal">(if enabled)</span></label>
               <input inputMode="numeric" autoComplete="one-time-code" value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} className="w-full px-3 py-2.5 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50" />
@@ -154,36 +142,32 @@ export function AuthScreen({
           <button disabled={loading} className="w-full py-2.5 rounded-md bg-primary text-primary-foreground font-semibold uppercase tracking-[0.08em] text-sm hover:bg-primary/90 disabled:opacity-50 transition-colors">
             {loading
               ? "Please wait…"
-              : inviteToken
-              ? "Join workspace"
               : mode === "organization"
               ? "Create workspace"
               : mode === "user"
               ? "Create user account"
               : "Sign in"}
           </button>
-          {!inviteToken && (
-            <div className="space-y-2 text-center">
-              {mode !== "login" && (
-                <button type="button" onClick={() => setMode("login")} className="block w-full text-sm text-primary hover:underline">
-                  Already have an account? Sign in
-                </button>
-              )}
-              {portal === "admin" && mode !== "organization" && (
-                <button type="button" onClick={() => setMode("organization")} className="block w-full text-sm text-primary hover:underline">
-                  New organization? Create as admin
-                </button>
-              )}
-              {portal === "user" && mode !== "user" && (
-                <button type="button" onClick={() => setMode("user")} className="block w-full text-sm text-primary hover:underline">
-                  Join an organization as a user
-                </button>
-              )}
-              <a href="/" className="block w-full text-xs text-muted-foreground hover:text-primary hover:underline">
-                Switch portal
-              </a>
-            </div>
-          )}
+          <div className="space-y-2 text-center">
+            {mode !== "login" && (
+              <button type="button" onClick={() => setMode("login")} className="block w-full text-sm text-primary hover:underline">
+                Already have an account? Sign in
+              </button>
+            )}
+            {portal === "admin" && mode !== "organization" && (
+              <button type="button" onClick={() => setMode("organization")} className="block w-full text-sm text-primary hover:underline">
+                New organization? Create as admin
+              </button>
+            )}
+            {portal === "user" && mode !== "user" && (
+              <button type="button" onClick={() => setMode("user")} className="block w-full text-sm text-primary hover:underline">
+                Join an organization as a user
+              </button>
+            )}
+            <a href="/" className="block w-full text-xs text-muted-foreground hover:text-primary hover:underline">
+              Switch portal
+            </a>
+          </div>
         </form>
       </div>
     </div>

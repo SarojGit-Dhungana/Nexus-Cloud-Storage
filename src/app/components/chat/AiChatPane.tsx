@@ -15,7 +15,7 @@ const AI_DEFAULT_TITLE = "AI Chat";
 const AI_WELCOME: ChatMessage = {
   id: "welcome",
   from: "ai",
-  text: "Hi! I'm your NexusStorage AI assistant. I can summarize PDF, Word, Excel, and PowerPoint files of any size from your storage — try “summarize report.pdf” or “summarize budget.xlsx”.",
+  text: "Hi! I'm your Cloud Based Storage System AI assistant. I can summarize PDF, Word, Excel, and PowerPoint files of any size from your storage — try “summarize report.pdf” or “summarize budget.xlsx”.",
   time: "now",
 };
 

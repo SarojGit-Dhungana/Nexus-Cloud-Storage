@@ -57,7 +57,7 @@ class ExtractorTests(TestCase):
     def test_plain_and_json(self):
         from io import BytesIO
 
-        plain = extract_text(BytesIO(b"Hello NexusStorage report."), filename="notes.txt")
+        plain = extract_text(BytesIO(b"Hello Cloud Based Storage System report."), filename="notes.txt")
         self.assertIn("Hello", plain)
 
         payload = b'{"title": "Demo", "count": 2}'
@@ -72,7 +72,7 @@ class ExtractorTests(TestCase):
 
         doc = fitz.open()
         page = doc.new_page()
-        page.insert_text((72, 72), "NexusStorage prospectus revenue grew twelve percent.")
+        page.insert_text((72, 72), "Cloud Based Storage System prospectus revenue grew twelve percent.")
         pdf_bytes = doc.tobytes()
         doc.close()
 

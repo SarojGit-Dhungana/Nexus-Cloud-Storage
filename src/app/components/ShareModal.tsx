@@ -30,7 +30,7 @@ export function ShareModal({ file, open, onClose }: ShareModalProps) {
   const [expiration, setExpiration] = useState<string>('never');
   const [copied, setCopied] = useState(false);
 
-  const shareUrl = file ? `https://nexusstorage.com/s/${file.id}` : '';
+  const shareUrl = file ? `https://Cloud Based Storage System.com/s/${file.id}` : '';
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareUrl);

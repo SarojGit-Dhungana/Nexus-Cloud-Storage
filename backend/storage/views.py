@@ -627,13 +627,6 @@ class DashboardView(APIView):
                     "storage_used": storage_used,
                     "storage_total": request.user.effective_storage_quota,
                     "shared_items": shared_items,
-                    "bandwidth_bytes": ActivityLog.objects.filter(
-                        organization=request.user.organization,
-                        actor=request.user,
-                        action="downloaded",
-                        created_at__gte=now - timedelta(days=30),
-                    ).aggregate(value=Sum("node__size_bytes"))["value"]
-                    or 0,
                 },
                 "activity_chart": list(chart.values()),
                 "storage_breakdown": [{"name": key, "value": value} for key, value in categories.items()],
@@ -683,9 +676,7 @@ class AdminAnalyticsView(APIView):
                 "total_users": User.objects.filter(organization=organization).count(),
                 "active_today": User.objects.filter(organization=organization, last_login__date=now.date()).count(),
                 "total_storage": nodes.filter(node_type="file").aggregate(value=Sum("size_bytes"))["value"] or 0,
-                "api_calls": ActivityLog.objects.filter(
-                    organization=organization, created_at__gte=now - timedelta(days=30)
-                ).count(),
+                "total_files": nodes.filter(node_type="file").count(),
                 "user_growth": [
                     {"month": row["month"].strftime("%b %Y"), "users": row["users"]} for row in growth
                 ],

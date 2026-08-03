@@ -1,4 +1,7 @@
 // Brand ramp shared with theme.css — dark green / pure red / black / white.
+export const PRODUCT_NAME = "Cloud Based Storage System";
+export const PRODUCT_NAME_SHORT = "Cloud Storage";
+
 export const BRAND = {
   maroon: "#000000",
   rust: "#0A1F14",

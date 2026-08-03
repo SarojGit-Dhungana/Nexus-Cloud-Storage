@@ -79,7 +79,7 @@ export function TwoFactorDialog({ onClose, onDone }: { onClose: () => void; onDo
           ) : (
             <>
               <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal pl-4">
-                <li>Remove any previous NexusStorage entry from your authenticator app.</li>
+                <li>Remove any previous Cloud Based Storage System entry from your authenticator app.</li>
                 <li>Scan the QR code (or enter the key manually).</li>
                 <li>Enter the current 6-digit code — it changes every 30 seconds.</li>
               </ol>

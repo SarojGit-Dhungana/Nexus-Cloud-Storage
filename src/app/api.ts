@@ -306,14 +306,6 @@ export const authApi = {
     );
     return authenticateAndRoute(data, portal);
   },
-  async acceptInvitation(token: string, name: string, password: string) {
-    const portal = portalFromPath();
-    const data = await apiRequest<{ access: string; refresh: string; user: ApiUser }>(
-      "/auth/invitations/accept/",
-      { method: "POST", body: JSON.stringify({ token, name, password, portal }) },
-    );
-    return authenticateAndRoute(data, portal);
-  },
   me: () => apiRequest<ApiUser>("/auth/me/"),
   updateProfile: (changes: { name?: string; avatar_url?: string }) =>
     apiRequest<ApiUser>("/auth/me/", { method: "PATCH", body: JSON.stringify(changes) }),
@@ -455,11 +447,6 @@ export const adminApi = {
   updateUser: (id: string, changes: { role?: "admin" | "user"; is_active?: boolean; storage_quota_bytes?: number | null }) =>
     apiRequest<ApiUser>(`/auth/users/${id}/`, { method: "PATCH", body: JSON.stringify(changes) }),
   deleteUser: (id: string) => apiRequest<void>(`/auth/users/${id}/`, { method: "DELETE" }),
-  invite: (email: string, role: "admin" | "user" = "user") =>
-    apiRequest<{ invite_url: string; expires_at: string; email_sent?: boolean }>("/auth/invitations/", {
-      method: "POST",
-      body: JSON.stringify({ email, role }),
-    }),
   settings: () => apiRequest<OrganizationSettings>("/auth/organization/"),
   updateSettings: (changes: Partial<OrganizationSettings>) =>
     apiRequest<OrganizationSettings>("/auth/organization/", { method: "PATCH", body: JSON.stringify(changes) }),

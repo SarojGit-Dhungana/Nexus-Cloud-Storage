@@ -1,12 +1,10 @@
 import base64
 import io
-from datetime import timedelta
 
 import qrcode
 from django.conf import settings
 from django.db.models import BigIntegerField, Count, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
-from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny
@@ -17,15 +15,13 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 import pyotp
 
-from .emails import send_account_credentials_email, send_invitation_email
-from .models import Invitation, Organization, User
+from .emails import send_account_credentials_email
+from .models import Organization, User
 from .permissions import IsOrganizationAdmin, IsSuperAdmin
 from .security import decrypt_secret, encrypt_secret
 from .totp import find_enrollment_drift, provisioning_uri, verify_code
 from .serializers import (
     AdminUserUpdateSerializer,
-    InvitationAcceptSerializer,
-    InvitationCreateSerializer,
     LoginSerializer,
     OrganizationSerializer,
     OrganizationUserCreateSerializer,
@@ -147,7 +143,7 @@ class TwoFactorSetupView(APIView):
         user.totp_enabled = False
         user.totp_drift_steps = 0
         user.save(update_fields=("totp_secret_encrypted", "totp_enabled", "totp_drift_steps"))
-        issuer = user.organization.name if user.organization_id else "NexusStorage"
+        issuer = user.organization.name if user.organization_id else settings.PRODUCT_NAME
         uri = provisioning_uri(secret, user.email, issuer)
         # #region agent log
         try:
@@ -253,7 +249,7 @@ class TwoFactorConfirmView(APIView):
             return Response(
                 {
                     "detail": (
-                        "Authenticator code is invalid. Delete any old NexusStorage entry in your app, "
+                        "Authenticator code is invalid. Delete any old Cloud Based Storage System entry in your app, "
                         "scan the QR again, wait for a fresh 6-digit code, and retry. "
                         "Also turn on automatic date & time on your phone."
                     )
@@ -574,65 +570,3 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
                 except Exception:
                     pass
         instance.delete()
-
-
-class InvitationCreateView(APIView):
-    permission_classes = [IsOrganizationAdmin]
-
-    def post(self, request):
-        serializer = InvitationCreateSerializer(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        email = serializer.validated_data["email"]
-        Invitation.objects.filter(
-            organization=request.user.organization, email=email, accepted_at__isnull=True
-        ).delete()
-        raw_token, token_hash = Invitation.generate_token()
-        invitation = Invitation.objects.create(
-            organization=request.user.organization,
-            email=email,
-            role=serializer.validated_data["role"],
-            token_hash=token_hash,
-            invited_by=request.user,
-            expires_at=timezone.now() + timedelta(days=7),
-        )
-        invite_url = f"{settings.FRONTEND_URL}/user/?invite={raw_token}"
-        organization = request.user.organization
-        emailed = send_invitation_email(
-            to_email=email,
-            role=invitation.role,
-            organization_name=organization.name,
-            invited_by_name=request.user.display_name or "Administrator",
-            invite_url=invite_url,
-        )
-        return Response(
-            {
-                "id": invitation.id,
-                "email": invitation.email,
-                "expires_at": invitation.expires_at,
-                "invite_url": invite_url,
-                "email_sent": bool(emailed),
-            },
-            status=status.HTTP_201_CREATED,
-        )
-
-
-class InvitationAcceptView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        serializer = InvitationAcceptSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        denied = _reject_wrong_portal(request, user)
-        if denied:
-            user.delete()
-            return denied
-        refresh = RefreshToken.for_user(user)
-        return Response(
-            {
-                "access": str(refresh.access_token),
-                "refresh": str(refresh),
-                "user": UserSerializer(user).data,
-            },
-            status=status.HTTP_201_CREATED,
-        )

@@ -1,4 +1,4 @@
-# NexusStorage — Architecture Guide
+# Cloud Based Storage System — Architecture Guide
 
 This is the single project documentation file. It explains what the system does, which tools it uses, how OOP is applied, how models relate, and how the main flows work.
 
@@ -8,7 +8,7 @@ For **algorithms** (malware scan, hashing, TOTP, TF-IDF summarizer) and each one
 
 ## 1. What the system is
 
-NexusStorage is a **multi-tenant cloud storage** application.
+Cloud Based Storage System is a **multi-tenant cloud storage** application.
 
 - Each **organization** (workspace) keeps its own users and files.
 - People use different **portals** so the wrong role cannot open the wrong UI.

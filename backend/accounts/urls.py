@@ -3,8 +3,6 @@ from django.urls import path
 from .views import (
     LoginView,
     LogoutView,
-    InvitationAcceptView,
-    InvitationCreateView,
     MeView,
     OrganizationSettingsView,
     OrganizationDataClearView,
@@ -33,8 +31,6 @@ urlpatterns = [
     path("2fa/disable/", TwoFactorDisableView.as_view(), name="two_factor_disable"),
     path("organization/", OrganizationSettingsView.as_view(), name="organization_settings"),
     path("organization/data/", OrganizationDataClearView.as_view(), name="organization_data_clear"),
-    path("invitations/", InvitationCreateView.as_view(), name="invitation_create"),
-    path("invitations/accept/", InvitationAcceptView.as_view(), name="invitation_accept"),
     path("users/", UserListView.as_view(), name="user_list"),
     path("users/<uuid:pk>/", UserDetailView.as_view(), name="user_detail"),
     # System-level endpoints, super admin only.

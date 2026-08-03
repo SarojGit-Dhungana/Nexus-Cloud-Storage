@@ -3,11 +3,11 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Activity, Cpu, Database, HardDrive, Users } from "lucide-react";
+import { Activity, Database, Files, HardDrive, Users } from "lucide-react";
 import { adminApi, dashboardApi } from "../api";
 import { StorageMeter } from "../form-modals";
 import { ACTIVITY_COLORS, BRAND, BRAND_SERIES } from "../lib/brand";
-import { cn, formatByteCount, formatBytes } from "../lib/format";
+import { cn, formatByteCount } from "../lib/format";
 import { StatCard } from "./StatCard";
 
 export function AdminAnalytics() {
@@ -22,7 +22,7 @@ export function AdminAnalytics() {
         <StatCard label="Total Users" value={String(data?.total_users ?? 0)} delta="live" deltaType="up" icon={Users} iconColor={BRAND.brick} />
         <StatCard label="Active Today" value={String(data?.active_today ?? 0)} delta="live" deltaType="up" icon={Activity} iconColor={BRAND.ember} />
         <StatCard label="Total Storage" value={formatByteCount(data?.total_storage ?? 0)} delta="live" deltaType="up" icon={Database} iconColor={BRAND.clay} />
-        <StatCard label="API Calls" value={String(data?.api_calls ?? 0)} delta="30d" deltaType="down" icon={Cpu} iconColor={BRAND.maroon} />
+        <StatCard label="Total Files Stored" value={String(data?.total_files ?? 0)} delta="live" deltaType="up" icon={Files} iconColor={BRAND.maroon} />
       </div>
 
       {totalGb > 0 && (

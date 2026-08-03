@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Check, Cloud, Loader2, Lock, RefreshCw, Shield } from "lucide-react";
 import { cn } from "../lib/format";
+import { PRODUCT_NAME } from "../lib/brand";
 
 export const BOOT_STEPS = ["Establishing secure channel", "Restoring your session", "Preparing workspace"];
 export const BOOT_DURATION_MS = 1900;
@@ -32,7 +33,7 @@ export function WorkspaceLoader() {
               <Cloud className="w-7 h-7 text-white" />
             </div>
           </div>
-          <span className="font-brand text-[1.85rem] text-foreground">NexusStorage</span>
+          <span className="font-brand text-[1.35rem] text-foreground leading-tight text-center">{PRODUCT_NAME}</span>
           <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-primary">System online</p>
           <p className="mt-2 text-sm text-muted-foreground">Initializing secure workspace channels</p>
         </div>

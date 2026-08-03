@@ -1,10 +1,8 @@
-import { Navigate } from "react-router";
 import { Cloud, Crown, Shield, User } from "lucide-react";
 import { Portal, portalHome } from "../api";
+import { PRODUCT_NAME } from "../lib/brand";
 
 export function PortalLanding() {
-  const invite = new URLSearchParams(window.location.search).get("invite");
-  if (invite) return <Navigate to={`/user/?invite=${encodeURIComponent(invite)}`} replace />;
   const portals: { id: Portal; title: string; blurb: string; icon: React.ElementType; accent: "green" | "red" }[] = [
     { id: "user", title: "User portal", blurb: "Files, sharing, trash, and AI assistant", icon: User, accent: "green" },
     { id: "admin", title: "Admin portal", blurb: "Workspace analytics, members, and settings", icon: Shield, accent: "green" },
@@ -37,10 +35,10 @@ export function PortalLanding() {
             <Cloud className="w-6 h-6 text-white" />
           </div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7CFFB2] drop-shadow-[0_1px_8px_rgba(0,0,0,0.9)] mb-3">
-            NexusStorage operations platform
+            Cloud storage operations platform
           </p>
-          <h1 className="font-brand text-4xl sm:text-6xl text-white drop-shadow-[0_2px_16px_rgba(0,0,0,0.95)]">
-            NexusStorage
+          <h1 className="font-brand text-3xl sm:text-5xl text-white drop-shadow-[0_2px_16px_rgba(0,0,0,0.95)]">
+            {PRODUCT_NAME}
           </h1>
           <p className="mt-4 text-sm sm:text-base text-white/90 max-w-xl mx-auto leading-relaxed drop-shadow-[0_1px_10px_rgba(0,0,0,0.9)]">
             Industrial-grade cloud storage. Select a portal — each session stays isolated.

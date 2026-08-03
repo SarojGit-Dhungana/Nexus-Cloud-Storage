@@ -192,9 +192,9 @@ class StorageApiTests(APITestCase):
         created = self.client.post(
             "/api/auth/system/workspaces/",
             {
-                "name": "NexusStorage Workspace",
+                "name": "Cloud Based Storage System Workspace",
                 "admin_name": "Nexus Admin",
-                "admin_email": "owner@nexusstorage.test",
+                "admin_email": "owner@cloudbasedstorage.test",
                 "admin_password": "Strong-Test-Password!9",
                 "storage_quota_bytes": 50 * 1024**3,
             },
@@ -206,7 +206,7 @@ class StorageApiTests(APITestCase):
         self.assertEqual(created.data["storage_quota_bytes"], 50 * 1024**3)
         self.assertEqual(len(mail.outbox), 1)
         admin_mail = mail.outbox[0].body
-        self.assertIn("owner@nexusstorage.test", admin_mail)
+        self.assertIn("owner@cloudbasedstorage.test", admin_mail)
         self.assertIn("Strong-Test-Password!9", admin_mail)
         self.assertIn("/admin", admin_mail)
         mail.outbox.clear()
@@ -223,7 +223,7 @@ class StorageApiTests(APITestCase):
         self.assertEqual(allocated.data["storage_quota_bytes"], 75 * 1024**3)
 
         # Workspace admins cannot raise their own storage allocation.
-        new_admin = User.objects.get(email="owner@nexusstorage.test")
+        new_admin = User.objects.get(email="owner@cloudbasedstorage.test")
         self.authenticate(new_admin)
         org_patch = self.client.patch(
             "/api/auth/organization/",
@@ -375,36 +375,6 @@ class StorageApiTests(APITestCase):
         self.authenticate(self.member)
         self.assertEqual(self.client.get("/api/admin/analytics/").status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_admin_can_invite_user_with_hashed_one_time_token(self):
-        self.authenticate()
-        response = self.client.post(
-            "/api/auth/invitations/", {"email": "invited@example.com", "role": "user"}, format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(response.data["email_sent"])
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("invited@example.com", mail.outbox[0].to)
-        invite_body = mail.outbox[0].body
-        self.assertIn("invited@example.com", invite_body)
-        self.assertIn(response.data["invite_url"], invite_body)
-        self.assertNotIn("Temporary password", invite_body)
-        token = response.data["invite_url"].split("invite=")[1]
-
-        self.client.force_authenticate(user=None)
-        accepted = self.client.post(
-            "/api/auth/invitations/accept/",
-            {"token": token, "name": "Invited User", "password": "Strong-Invited-Password!42"},
-            format="json",
-        )
-        self.assertEqual(accepted.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(accepted.data["user"]["organization"]["id"], str(self.organization.id))
-        reused = self.client.post(
-            "/api/auth/invitations/accept/",
-            {"token": token, "name": "Other", "password": "Strong-Invited-Password!42"},
-            format="json",
-        )
-        self.assertEqual(reused.status_code, status.HTTP_400_BAD_REQUEST)
-
     def test_admin_cannot_suspend_self_or_other_admins(self):
         self.authenticate()
         self_denied = self.client.patch(
@@ -449,6 +419,7 @@ class StorageApiTests(APITestCase):
         self.assertEqual(response.data["organization"]["id"], str(self.organization.id))
         created = User.objects.get(email="new-member@example.com")
         self.assertEqual(created.organization_id, self.organization.id)
+        self.assertEqual(created.storage_quota_bytes, 50 * 1024**3)
         self.assertTrue(created.check_password("Strong-New-Member!42"))
         self.assertEqual(len(mail.outbox), 1)
         credentials = mail.outbox[0].body

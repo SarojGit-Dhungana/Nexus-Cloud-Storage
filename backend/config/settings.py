@@ -92,7 +92,13 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-if os.getenv("STORAGE_BACKEND", "local") == "s3":
+# Product display name used in emails, TOTP issuer, and system copy.
+PRODUCT_NAME = os.getenv("PRODUCT_NAME", "Cloud Based Storage System").strip() or "Cloud Based Storage System"
+
+# Object storage via boto3 / django-storages.
+# Set STORAGE_BACKEND=s3 and fill AWS_* for Cloudflare R2, MinIO, AWS S3, or Supabase.
+# Leave STORAGE_BACKEND=local (default) to keep files on disk under MEDIA_ROOT.
+if os.getenv("STORAGE_BACKEND", "local").lower().strip() == "s3":
     STORAGES = {
         "default": {"BACKEND": "storages.backends.s3.S3Storage"},
         "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
@@ -100,12 +106,15 @@ if os.getenv("STORAGE_BACKEND", "local") == "s3":
     AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
     AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
     AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
-    AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_ENDPOINT_URL")
+    AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_ENDPOINT_URL") or None
     AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "auto")
+    AWS_S3_SIGNATURE_VERSION = os.getenv("AWS_S3_SIGNATURE_VERSION", "s3v4")
+    AWS_S3_ADDRESSING_STYLE = os.getenv("AWS_S3_ADDRESSING_STYLE", "path")
     AWS_QUERYSTRING_AUTH = True
     AWS_QUERYSTRING_EXPIRE = int(os.getenv("AWS_QUERYSTRING_EXPIRE", "900"))
     AWS_DEFAULT_ACL = None
     AWS_S3_FILE_OVERWRITE = False
+    AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "max-age=86400"}
 
 CORS_ALLOWED_ORIGINS = [
     v.strip() for v in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",") if v.strip()
@@ -162,13 +171,22 @@ if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 DEFAULT_FROM_EMAIL = (
     os.getenv("DEFAULT_FROM_EMAIL")
-    or (f"NexusStorage <{EMAIL_HOST_USER}>" if EMAIL_HOST_USER else "NexusStorage <no-reply@nexusstorage.local>")
+    or (
+        f"{PRODUCT_NAME} <{EMAIL_HOST_USER}>"
+        if EMAIL_HOST_USER
+        else f"{PRODUCT_NAME} <no-reply@cloudbasedstorage.local>"
+    )
 ).strip()
 if "test" in sys.argv:
     EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
     SECURE_SSL_REDIRECT = False
     SESSION_COOKIE_SECURE = False
     CSRF_COOKIE_SECURE = False
+    # Keep tests on local disk even if .env points at S3.
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
     if "testserver" not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append("testserver")
 elif EMAIL_BACKEND.endswith("smtp.EmailBackend"):

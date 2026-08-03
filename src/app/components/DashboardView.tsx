@@ -4,14 +4,14 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Activity, Files, HardDrive, RefreshCw, Share2, Star, Upload } from "lucide-react";
+import { Files, HardDrive, RefreshCw, Share2, Star, Upload } from "lucide-react";
 import { dashboardApi } from "../api";
 import { StorageMeter } from "../form-modals";
 import { useExternalFileDrop } from "../hooks/useExternalFileDrop";
 import { useUploadGuard } from "../hooks/useUploadGuard";
 import { ACTIVITY_COLORS, BRAND, BRAND_SERIES } from "../lib/brand";
 import { getFileIcon, toUiFile } from "../lib/files";
-import { cn, formatBytes, formatByteCount } from "../lib/format";
+import { cn, formatByteCount } from "../lib/format";
 import type { FileItem, UserProfile } from "../types/app-types";
 import { StatCard } from "./StatCard";
 
@@ -40,11 +40,10 @@ export function DashboardView({ user }: { user: UserProfile }) {
   return (
     <div className="space-y-6">
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Files" value={String(stats?.total_files ?? 0)} delta="live" deltaType="up" icon={Files} iconColor={BRAND.brick} />
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <StatCard label="Total Files Stored" value={String(stats?.total_files ?? 0)} delta="live" deltaType="up" icon={Files} iconColor={BRAND.brick} />
         <StatCard label="Storage Used" value={formatByteCount(stats?.storage_used ?? 0)} delta="live" deltaType="up" icon={HardDrive} iconColor={BRAND.maroon} />
         <StatCard label="Shared Items" value={String(stats?.shared_items ?? 0)} delta="live" deltaType="up" icon={Share2} iconColor={BRAND.ember} />
-        <StatCard label="Bandwidth" value={formatByteCount(stats?.bandwidth_bytes ?? 0)} delta="30d" deltaType="down" icon={Activity} iconColor={BRAND.clay} />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-4">

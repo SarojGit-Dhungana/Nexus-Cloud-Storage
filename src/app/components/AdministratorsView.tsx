@@ -116,8 +116,8 @@ export function AdministratorsView() {
     const ok = await confirm({
       title: suspending ? `Suspend ${account.name}?` : `Activate ${account.name}?`,
       description: suspending
-        ? `Are you sure you want to suspend this administrator? ${account.name} will temporarily lose access to NexusStorage until you activate them again.`
-        : `${account.name} will regain access to NexusStorage and can sign in again.`,
+        ? `Are you sure you want to suspend this administrator? ${account.name} will temporarily lose access to Cloud Based Storage System until you activate them again.`
+        : `${account.name} will regain access to Cloud Based Storage System and can sign in again.`,
       confirmLabel: suspending ? "Yes, suspend" : "Yes, activate",
       danger: suspending,
     });

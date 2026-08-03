@@ -1,5 +1,5 @@
 """
-Train the local NexusStorage file-analysis summarizer.
+Train the local Cloud Based Storage System file-analysis summarizer.
 
 Examples:
   python manage.py train_file_analyzer
@@ -31,7 +31,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--include-storage",
             action="store_true",
-            help="Also train on analyzable files already stored in NexusStorage.",
+            help="Also train on analyzable files already stored in Cloud Based Storage System.",
         )
         parser.add_argument(
             "--org-id",
