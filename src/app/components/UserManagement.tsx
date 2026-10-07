@@ -104,8 +104,8 @@ export function UserManagement({ currentUserId }: { currentUserId: string }) {
     const ok = await confirm({
       title: suspending ? `Suspend ${user.name}?` : `Activate ${user.name}?`,
       description: suspending
-        ? `Are you sure you want to suspend this user? ${user.name} will temporarily lose access to Cloud Based Storage System until you activate them again.`
-        : `${user.name} will regain access to Cloud Based Storage System and can sign in again.`,
+        ? `Are you sure you want to suspend this user? ${user.name} will temporarily lose access to Data Storage Management System until you activate them again.`
+        : `${user.name} will regain access to Data Storage Management System and can sign in again.`,
       confirmLabel: suspending ? "Yes, suspend" : "Yes, activate",
       danger: suspending,
     });

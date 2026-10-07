@@ -385,6 +385,149 @@
   color: var(--signal-red);
 }
 
+/* Landing uses Inter — the standard face for cloud and SaaS product pages. */
+.landing-root {
+  font-family: "Inter", "Arimo", "Segoe UI", sans-serif;
+  font-optical-sizing: auto;
+}
+
+.landing-root .font-brand,
+.landing-root .font-display {
+  font-family: "Inter", "Arimo", "Segoe UI", sans-serif;
+}
+
+.landing-nav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: #ffffff;
+  border-bottom: 1px solid rgba(10, 31, 20, 0.08);
+  transition: box-shadow 0.25s ease;
+}
+
+.landing-nav.is-solid {
+  box-shadow: 0 8px 24px rgba(10, 31, 20, 0.06);
+}
+
+.landing-nav-link {
+  position: relative;
+  color: #4A5C52;
+  border-radius: 999px;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.landing-nav-link:hover,
+.landing-nav-link:focus-visible {
+  color: #145A32;
+  background: #E8F5EE;
+}
+
+.landing-rise {
+  animation: landing-rise 0.7s ease both;
+}
+
+@keyframes landing-rise {
+  from { transform: translateY(14px); }
+  to { transform: translateY(0); }
+}
+
+.landing-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(10, 31, 20, 0.1);
+  background:
+    linear-gradient(180deg, #ffffff 0%, #f7fbf8 100%);
+  box-shadow: 0 10px 28px rgba(10, 31, 20, 0.06);
+  transition: transform 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease;
+}
+
+.landing-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, #145A32, #3DA86A);
+  transform: scaleY(0.35);
+  transform-origin: top;
+  transition: transform 0.35s ease;
+}
+
+.landing-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(20, 90, 50, 0.28);
+  box-shadow: 0 22px 40px rgba(10, 31, 20, 0.12);
+}
+
+.landing-card:hover::before {
+  transform: scaleY(1);
+}
+
+.landing-card-icon {
+  transition: transform 0.35s ease, background-color 0.35s ease, color 0.35s ease;
+}
+
+.landing-card:hover .landing-card-icon {
+  transform: scale(1.08) rotate(-6deg);
+  background: #145A32;
+  color: #ffffff;
+}
+
+.landing-portal {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(165deg, rgba(20, 90, 50, 0.92), rgba(5, 16, 11, 0.94));
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
+  transition: transform 0.35s ease, box-shadow 0.35s ease;
+}
+
+.landing-portal--signal {
+  background: linear-gradient(165deg, #3a0d0d, #140606 70%);
+}
+
+.landing-portal::after {
+  content: "";
+  position: absolute;
+  inset: auto -20% -40% auto;
+  width: 180px;
+  height: 180px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(124, 255, 178, 0.28), transparent 68%);
+  transition: transform 0.45s ease;
+  z-index: -1;
+}
+
+.landing-portal--signal::after {
+  background: radial-gradient(circle, rgba(255, 0, 0, 0.35), transparent 68%);
+}
+
+.landing-portal:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 28px 48px rgba(0, 0, 0, 0.28);
+}
+
+.landing-portal:hover::after {
+  transform: scale(1.25);
+}
+
+.landing-portal-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: gap 0.25s ease, color 0.25s ease;
+}
+
+.landing-portal:hover .landing-portal-go {
+  gap: 0.7rem;
+  color: #7CFFB2;
+}
+
+.landing-portal--signal:hover .landing-portal-go {
+  color: #ffb4b4;
+}
+
 /* Slow zoom for the landing photo — used with Tailwind classes in JSX */
 .hero-drift {
   transform-origin: 50% 40%;
@@ -403,4 +546,7 @@
   .nexus-drop-pulse { animation: none; }
   .nexus-auth-orbit { animation: none; }
   .hero-drift { animation: none; transform: scale(1.05); }
+  .landing-rise { animation: none; }
+  .landing-card:hover,
+  .landing-portal:hover { transform: none; }
 }

@@ -29,7 +29,7 @@ def send_account_credentials_email(
     Email a newly created (or password-reset) account with:
     email, temporary password, and the correct portal login URL.
     """
-    product = getattr(settings, "PRODUCT_NAME", "Cloud Based Storage System")
+    product = getattr(settings, "PRODUCT_NAME", "Data Storage Management System")
     login_url = portal_login_url(role)
     role_label = "administrator" if role == "admin" else "member"
     workspace = organization_name or product

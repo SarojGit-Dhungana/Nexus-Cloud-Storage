@@ -138,7 +138,7 @@ export function SystemSettings() {
       {formModal}
       <div>
         <h2 className="font-semibold">System Settings</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Configure your Cloud Based Storage System instance</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Configure your Data Storage Management System instance</p>
       </div>
 
       <div className="bg-card rounded-xl border border-border p-5">

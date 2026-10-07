@@ -1,5 +1,5 @@
 """
-Local file-analysis engine for Cloud Based Storage System AI Assistance.
+Local file-analysis engine for Data Storage Management System AI Assistance.
 
 Uses a trainable TF-IDF extractive summarizer (no external AI APIs).
 Train with: python manage.py train_file_analyzer

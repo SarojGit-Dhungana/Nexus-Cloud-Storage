@@ -1,4 +1,4 @@
-# Cloud Based Storage System — Algorithms & Responsibilities
+# Data Storage Management System — Algorithms & Responsibilities
 
 This document lists the main algorithms used in the system and what each one is responsible for.
 
@@ -155,7 +155,3 @@ Extraction supports **any file size** (all pages / sheets / slides by default). 
 | Hide 2FA secrets | Fernet | `accounts/security.py` |
 | Summarize documents | TF-IDF sentence ranking | `file_analysis/model.py` |
 | Read PDF/Office text | Format extractors + OCR | `file_analysis/extractor.py` |
-
----
-
-See also: [ARCHITECTURE.md](./ARCHITECTURE.md) for system structure and flows.

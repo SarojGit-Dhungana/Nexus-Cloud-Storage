@@ -192,7 +192,7 @@ class StorageApiTests(APITestCase):
         created = self.client.post(
             "/api/auth/system/workspaces/",
             {
-                "name": "Cloud Based Storage System Workspace",
+                "name": "Data Storage Management System Workspace",
                 "admin_name": "Nexus Admin",
                 "admin_email": "owner@cloudbasedstorage.test",
                 "admin_password": "Strong-Test-Password!9",

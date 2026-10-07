@@ -145,33 +145,6 @@ class TwoFactorSetupView(APIView):
         user.save(update_fields=("totp_secret_encrypted", "totp_enabled", "totp_drift_steps"))
         issuer = user.organization.name if user.organization_id else settings.PRODUCT_NAME
         uri = provisioning_uri(secret, user.email, issuer)
-        # #region agent log
-        try:
-            import hashlib, json, time as _time
-            from urllib.parse import parse_qs, urlparse
-            uri_secret = parse_qs(urlparse(uri).query).get("secret", [""])[0]
-            open(r"d:\Self-Project\Cloud Storage\debug-cbe2cb.log", "a", encoding="utf-8").write(
-                json.dumps({
-                    "sessionId": "cbe2cb",
-                    "hypothesisId": "A,D",
-                    "location": "accounts/views.py:TwoFactorSetupView",
-                    "message": "2fa setup created secret",
-                    "data": {
-                        "secretLen": len(secret),
-                        "secretHash": hashlib.sha256(secret.encode()).hexdigest()[:12],
-                        "uriSecretHash": hashlib.sha256(uri_secret.encode()).hexdigest()[:12] if uri_secret else None,
-                        "uriSecretMatches": uri_secret == secret,
-                        "issuer": issuer[:40],
-                        "qrLen": len(_qr_data_uri(uri)),
-                        "serverUnix": int(_time.time()),
-                    },
-                    "timestamp": int(_time.time() * 1000),
-                    "runId": "pre-fix",
-                }) + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         return Response({"secret": secret, "provisioning_uri": uri, "qr_code": _qr_data_uri(uri)})
 
 
@@ -184,72 +157,18 @@ class TwoFactorConfirmView(APIView):
             return Response({"detail": "Start two-factor setup first."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             secret = decrypt_secret(user.totp_secret_encrypted)
-        except Exception as decrypt_error:
-            # #region agent log
-            try:
-                import json, time as _time
-                open(r"d:\Self-Project\Cloud Storage\debug-cbe2cb.log", "a", encoding="utf-8").write(
-                    json.dumps({
-                        "sessionId": "cbe2cb",
-                        "hypothesisId": "A",
-                        "location": "accounts/views.py:TwoFactorConfirmView",
-                        "message": "2fa confirm decrypt failed",
-                        "data": {"errorType": type(decrypt_error).__name__},
-                        "timestamp": int(_time.time() * 1000),
-                        "runId": "pre-fix",
-                    }) + "\n"
-                )
-            except Exception:
-                pass
-            # #endregion
+        except Exception:
             return Response(
                 {"detail": "Saved authenticator secret could not be read. Start setup again."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         raw_otp = request.data.get("otp", "")
         drift_steps = find_enrollment_drift(secret, raw_otp)
-        # #region agent log
-        try:
-            import hashlib, json, time as _time
-            from accounts.totp import normalize_code, normalize_secret
-            import pyotp as _pyotp
-            code = normalize_code(raw_otp)
-            totp = _pyotp.TOTP(normalize_secret(secret))
-            server_now = totp.now()
-            counter = int(_time.time()) // int(totp.interval)
-            nearby = []
-            for off in (-2, -1, 0, 1, 2):
-                cand = str(totp.generate_otp(counter + off))
-                nearby.append({"off": off, "match": cand == code})
-            open(r"d:\Self-Project\Cloud Storage\debug-cbe2cb.log", "a", encoding="utf-8").write(
-                json.dumps({
-                    "sessionId": "cbe2cb",
-                    "hypothesisId": "A,B,C",
-                    "location": "accounts/views.py:TwoFactorConfirmView",
-                    "message": "2fa confirm attempted",
-                    "data": {
-                        "secretLen": len(secret),
-                        "secretHash": hashlib.sha256(secret.encode()).hexdigest()[:12],
-                        "rawOtpType": type(raw_otp).__name__,
-                        "rawOtpLen": len(str(raw_otp)),
-                        "normalizedOtpLen": len(code),
-                        "otpEqualsServerNow": code == server_now,
-                        "nearbyMatches": nearby,
-                        "driftSteps": drift_steps,
-                        "serverUnix": int(_time.time()),
-                    },
-                    "timestamp": int(_time.time() * 1000),
-                    "runId": "pre-fix",
-                }) + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         if drift_steps is None:
             return Response(
                 {
                     "detail": (
-                        "Authenticator code is invalid. Delete any old Cloud Based Storage System entry in your app, "
+                        "Authenticator code is invalid. Delete any old Data Storage Management System entry in your app, "
                         "scan the QR again, wait for a fresh 6-digit code, and retry. "
                         "Also turn on automatic date & time on your phone."
                     )

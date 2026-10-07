@@ -102,8 +102,8 @@ export function WorkspacesView() {
     const ok = await confirm({
       title: suspending ? `Suspend “${workspace.name}”?` : `Reactivate “${workspace.name}”?`,
       description: suspending
-        ? `Members of this workspace will temporarily lose access to Cloud Based Storage System until you reactivate it.`
-        : `Members of “${workspace.name}” will be able to sign in and use Cloud Based Storage System again.`,
+        ? `Members of this workspace will temporarily lose access to Data Storage Management System until you reactivate it.`
+        : `Members of “${workspace.name}” will be able to sign in and use Data Storage Management System again.`,
       confirmLabel: suspending ? "Yes, suspend" : "Yes, reactivate",
       danger: suspending,
     });

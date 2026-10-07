@@ -1,4 +1,4 @@
-# Cloud Based Storage System
+# Data Storage Management System
 
 Multi-tenant cloud storage SaaS: React/Vite frontend + Django REST backend (PostgreSQL, JWT, roles, files, sharing, friends chat, AI assistant).
 

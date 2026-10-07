@@ -45,7 +45,7 @@ export function Sidebar({
         <div className="w-7 h-7 rounded-md nexus-mark flex items-center justify-center flex-shrink-0">
           <Cloud className="w-3.5 h-3.5 text-white" />
         </div>
-        {!collapsed && <span className="ml-2.5 font-brand text-[0.95rem] leading-tight">{PRODUCT_NAME_SHORT}</span>}
+        {!collapsed && <span className="ml-2.5 font-brand text-[0.72rem] leading-tight">{PRODUCT_NAME_SHORT}</span>}
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-0.5">

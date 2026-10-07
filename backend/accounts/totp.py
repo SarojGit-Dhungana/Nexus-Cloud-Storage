@@ -63,7 +63,7 @@ def provisioning_uri(secret, email, issuer_name=None):
     """Build a Google Authenticator–compatible otpauth URI with a safe issuer."""
     from django.conf import settings
 
-    default_issuer = getattr(settings, "PRODUCT_NAME", "Cloud Based Storage System")
+    default_issuer = getattr(settings, "PRODUCT_NAME", "Data Storage Management System")
     safe_issuer = "".join(
         character
         for character in str(issuer_name or default_issuer)

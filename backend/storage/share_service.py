@@ -60,7 +60,7 @@ class ShareService:
             )
             # Simple inbox link for the person who received the share
             app_url = f"{settings.FRONTEND_URL}/user/?shared=inbox"
-            product = getattr(settings, "PRODUCT_NAME", "Cloud Based Storage System")
+            product = getattr(settings, "PRODUCT_NAME", "Data Storage Management System")
             emailed = send_notification(
                 subject=f"{self.user.display_name} shared '{node.name}' with you",
                 body=(
@@ -98,7 +98,7 @@ class ShareService:
             public_url = self.request.build_absolute_uri(f"/api/public/shares/{raw_token}/")
             emailed = False
             if notify_email:
-                product = getattr(settings, "PRODUCT_NAME", "Cloud Based Storage System")
+                product = getattr(settings, "PRODUCT_NAME", "Data Storage Management System")
                 emailed = bool(
                     send_notification(
                         subject=f"{self.user.display_name} shared '{node.name}' with you",

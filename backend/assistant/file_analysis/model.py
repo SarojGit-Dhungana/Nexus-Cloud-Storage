@@ -1,7 +1,7 @@
 """
 Trainable extractive summarization model (TF-IDF + sentence ranking).
 
-This is Cloud Based Storage System's own file-analysis model — no OpenAI/Groq/Ollama.
+This is Data Storage Management System's own file-analysis model — no OpenAI/Groq/Ollama.
 Train with manage.py train_file_analyzer; weights are saved under models/.
 """
 

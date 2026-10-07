@@ -93,7 +93,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Product display name used in emails, TOTP issuer, and system copy.
-PRODUCT_NAME = os.getenv("PRODUCT_NAME", "Cloud Based Storage System").strip() or "Cloud Based Storage System"
+PRODUCT_NAME = os.getenv("PRODUCT_NAME", "Data Storage Management System").strip() or "Data Storage Management System"
 
 # Object storage via boto3 / django-storages.
 # Set STORAGE_BACKEND=s3 and fill AWS_* for Cloudflare R2, MinIO, AWS S3, or Supabase.

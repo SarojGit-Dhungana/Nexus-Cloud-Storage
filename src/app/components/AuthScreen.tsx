@@ -11,9 +11,11 @@ export function AuthScreen({
   portal: Portal;
   onAuthenticated: (user: ApiUser) => void;
 }) {
-  const [mode, setMode] = useState<"login" | "organization" | "user">(
-    portal === "admin" ? "login" : portal === "user" ? "login" : "login",
-  );
+  const [mode, setMode] = useState<"login" | "organization" | "user">(() => {
+    if (portal !== "admin") return "login";
+    const request = new URLSearchParams(window.location.search).get("request");
+    return request === "workspace" ? "organization" : "login";
+  });
   const [name, setName] = useState("");
   const [organization, setOrganization] = useState("");
   const [organizationSlug, setOrganizationSlug] = useState("");
@@ -119,7 +121,7 @@ export function AuthScreen({
           {mode === "user" && (
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1.5">Organization slug</label>
-              <input required value={organizationSlug} onChange={e => setOrganizationSlug(e.target.value.toLowerCase().trim())} placeholder="Cloud Based Storage System" className="w-full px-3 py-2.5 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50" />
+              <input required value={organizationSlug} onChange={e => setOrganizationSlug(e.target.value.toLowerCase().trim())} placeholder="data-storage" className="w-full px-3 py-2.5 rounded-lg bg-secondary border border-border focus:outline-none focus:border-primary/50" />
               <p className="text-[11px] text-muted-foreground mt-1">
                 Use the slug from Settings. If the admin turned off self-registration, ask them to add your account.
               </p>

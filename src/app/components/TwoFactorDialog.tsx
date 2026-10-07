@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { Check, Key, Loader2, QrCode, ShieldCheck, X } from "lucide-react";
+import { Loader2, ShieldCheck, X } from "lucide-react";
 import { authApi } from "../api";
 
 export function TwoFactorDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
@@ -15,16 +15,10 @@ export function TwoFactorDialog({ onClose, onDone }: { onClose: () => void; onDo
     setBusy(true);
     try {
       const result = await authApi.setupTwoFactor(password);
-      // #region agent log
-      fetch('http://127.0.0.1:7882/ingest/795b83e6-b33a-400f-860a-455a02972299',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cbe2cb'},body:JSON.stringify({sessionId:'cbe2cb',runId:'pre-fix',hypothesisId:'D,E',location:'TwoFactorDialog.tsx:startSetup',message:'2fa setup response received',data:{secretLen:result?.secret?.length??0,hasQr:Boolean(result?.qr_code),qrPrefix:String(result?.qr_code||'').slice(0,32),uriLen:result?.provisioning_uri?.length??0},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       setSetup(result);
       setOtp("");
       setStep("scan");
     } catch (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7882/ingest/795b83e6-b33a-400f-860a-455a02972299',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cbe2cb'},body:JSON.stringify({sessionId:'cbe2cb',runId:'pre-fix',hypothesisId:'D',location:'TwoFactorDialog.tsx:startSetup',message:'2fa setup failed',data:{error:error instanceof Error?error.message:String(error)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       toast.error(error instanceof Error ? error.message : "Could not start setup");
     } finally {
       setBusy(false);
@@ -35,21 +29,12 @@ export function TwoFactorDialog({ onClose, onDone }: { onClose: () => void; onDo
     const code = otp.replace(/\D/g, "");
     if (code.length !== 6) return toast.error("Enter the 6-digit code from your authenticator");
     setBusy(true);
-    // #region agent log
-    fetch('http://127.0.0.1:7882/ingest/795b83e6-b33a-400f-860a-455a02972299',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cbe2cb'},body:JSON.stringify({sessionId:'cbe2cb',runId:'pre-fix',hypothesisId:'B,E',location:'TwoFactorDialog.tsx:confirm',message:'2fa confirm sending',data:{otpLen:code.length,otpAllDigits:/^\d{6}$/.test(code),secretLen:setup?.secret?.length??0},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     try {
       await authApi.confirmTwoFactor(code);
-      // #region agent log
-      fetch('http://127.0.0.1:7882/ingest/795b83e6-b33a-400f-860a-455a02972299',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cbe2cb'},body:JSON.stringify({sessionId:'cbe2cb',runId:'pre-fix',hypothesisId:'C',location:'TwoFactorDialog.tsx:confirm',message:'2fa confirm success',data:{},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       toast.success("Two-factor authentication enabled");
       onDone();
       onClose();
     } catch (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7882/ingest/795b83e6-b33a-400f-860a-455a02972299',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cbe2cb'},body:JSON.stringify({sessionId:'cbe2cb',runId:'pre-fix',hypothesisId:'B,C,E',location:'TwoFactorDialog.tsx:confirm',message:'2fa confirm failed',data:{error:error instanceof Error?error.message:String(error),otpLen:code.length},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       toast.error(error instanceof Error ? error.message : "Invalid code");
       setOtp("");
     } finally {
@@ -79,7 +64,7 @@ export function TwoFactorDialog({ onClose, onDone }: { onClose: () => void; onDo
           ) : (
             <>
               <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal pl-4">
-                <li>Remove any previous Cloud Based Storage System entry from your authenticator app.</li>
+                <li>Remove any previous Data Storage Management System entry from your authenticator app.</li>
                 <li>Scan the QR code (or enter the key manually).</li>
                 <li>Enter the current 6-digit code — it changes every 30 seconds.</li>
               </ol>
